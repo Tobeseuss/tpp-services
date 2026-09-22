@@ -368,6 +368,8 @@ TPP.views = TPP.views || {};
                         const vals = {};
                         form.querySelectorAll('input[id], textarea[id], select[id]').forEach((el) => {
                                 if (el.type === 'button' || el.type === 'submit') return;
+                                // ۱.۲۱.۲ — کادر جستجوی کامبوباکس‌ها داده پیش‌نویس نیست (انتخاب واقعی در hidden input ذخیره می‌شود)
+                                if (el.classList.contains('combo-input')) return;
                                 if (el.type === 'checkbox') { vals[el.id] = el.checked ? '1' : ''; return; }
                                 vals[el.id] = el.value;
                         });
@@ -405,6 +407,8 @@ TPP.views = TPP.views || {};
                                 if (MODE_IDS.indexOf(id) !== -1) return; // قبلاً اعمال شد
                                 const el = document.getElementById(id);
                                 if (!el || el.type === 'button' || el.type === 'submit') return;
+                                // ۱.۲۱.۲ — پیش‌نویس‌های قدیمی: ورودی کامبوباکس بازنشانی/باز نشود (باگ منوی باز خودکار)
+                                if (el.classList.contains('combo-input')) return;
                                 if (el.type === 'checkbox') { el.checked = v === '1'; applied++; return; }
                                 if (el.value !== v) { el.value = v; applied++; }
                                 try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {} // رشد خودکار کادر
@@ -800,6 +804,18 @@ TPP.views = TPP.views || {};
                 };
                 renderCatChip(defaultCatId || 0, defaultCatLabel); // ۱.۲۱.۰ — پیش‌انتخاب دسته بازبینی
 
+                /* ۱.۲۱.۲ — همگام‌سازی چیپ دسته پس از بازیابی پیش‌نویس:
+                   apply مقدار hidden input را دستی dispatch می‌کند؛ چیپ باید با همان مقدار تازه شود */
+                const catLabelOf = (id) => {
+                        const src = (cats && cats.categories) ? cats.categories : [];
+                        const c = src.find((x) => String(x.id) === String(id));
+                        return c ? c.label : '';
+                };
+                catHidden.addEventListener('input', () => {
+                        const id = parseInt(faToEn(String(catHidden.value || '')), 10) || 0;
+                        renderCatChip(id, catLabelOf(id));
+                });
+
                 tppComboList(catInput, catList, async (q) => searchKind('category', q), (item) => {
                         renderCatChip(item.id, item.label);
                         catInput.value = '';
@@ -834,6 +850,19 @@ TPP.views = TPP.views || {};
                                 }));
                         };
                         renderChips();
+
+                        /* ۱.۲۱.۲ — همگام‌سازی چیپ تگ‌ها پس از بازیابی پیش‌نویس */
+                        tagHidden.addEventListener('input', () => {
+                                let restored = [];
+                                try {
+                                        restored = JSON.parse(tagHidden.value || '[]').map((x) => parseInt(x, 10) || 0).filter(Boolean);
+                                } catch (e) { restored = []; }
+                                picked = restored.map((id) => {
+                                        const t = allTags.find((x) => x.id === id);
+                                        return { id: id, label: t ? t.label : ('#' + id) };
+                                });
+                                renderChips();
+                        });
 
                         tppComboList(tagInput, tagList, async (q) => {
                                 const rows = await searchKind('tag', q);
@@ -881,6 +910,9 @@ TPP.views = TPP.views || {};
                 };
                 input.addEventListener('focus', () => { run(); list.classList.remove('hidden'); });
                 input.addEventListener('input', () => {
+                        // ۱.۲۱.۲ — فقط تایپ واقعی کاربر لیست را باز کند؛ dispatch برنامه‌نویسی‌شده
+                        // (مثل بازیابی پیش‌نویس خودکار) نباید منوی کشویی را باز کند
+                        if (document.activeElement !== input) return;
                         list.classList.remove('hidden');
                         if (timer) clearTimeout(timer);
                         timer = setTimeout(run, 300);
