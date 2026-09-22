@@ -1,0 +1,17 @@
+# فایل‌های سیستمی
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# فایل‌های محیطی و حساس
+.env
+.env.*
+
+# وابستگی‌ها
+vendor/
+node_modules/
+
+# لاگ و کش
+*.log
+.wp-cache/
+.phpunit.result.cache
