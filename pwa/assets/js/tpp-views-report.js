@@ -169,8 +169,11 @@ TPP.views = TPP.views || {};
         function bindCal(container, opts) {
                 if (!container) return;
                 const getIso = () => opts.getIso();
+                // ۱.۲۱.۱ — رفع باگ: onPick باید به «bindCal» پاس شود (نه فقط calHtml)؛
+                //   قبلاً opts.onPick اینجا undefined بود و کلیک روز TypeError بی‌صدا می‌داد.
                 container.querySelectorAll('[data-cal]').forEach((td) => td.addEventListener('click', () => {
-                        opts.onPick(td.getAttribute('data-cal'));
+                        const iso = td.getAttribute('data-cal');
+                        if (typeof opts.onPick === 'function') opts.onPick(iso);
                 }));
                 container.querySelectorAll('[data-calnav]').forEach((b) => b.addEventListener('click', () => {
                         const ym = jalYm(getIso());
@@ -446,6 +449,7 @@ TPP.views = TPP.views || {};
                         });
                         bindCal(holder, {
                                 getIso: () => jmToIso(jy, jm, 1),
+                                onPick: pickCalendarDay, // ۱.۲۱.۱ — اتصال واقعی انتخاب روز
                                 onNav: (firstIso) => { wr.repYm = ymKeyOf(firstIso) || wr.repYm; renderRepCal(); }
                         });
                 };
@@ -483,6 +487,7 @@ TPP.views = TPP.views || {};
                         });
                         bindCal(holder, {
                                 getIso: () => jmToIso(jy, jm, 1),
+                                onPick: pickCalendarDay, // ۱.۲۱.۱ — اتصال واقعی انتخاب روز
                                 onNav: (firstIso) => { wr.actYm = ymKeyOf(firstIso) || wr.actYm; renderActCal(); }
                         });
                 };
@@ -867,21 +872,24 @@ TPP.views = TPP.views || {};
                         const warn = r && !r.unlimited
                                 ? '<div class="alert warn" style="margin:6px 0;font-size:12px">⚠️ تاریخچه فعالیت‌ها فقط ' + faNum(r.days) + ' روز نگهداری می‌شود — اگر به گزارش تبدیل نشود از دست می‌رود.</div>'
                                 : '';
+                        // ۱.۲۱.۱ — تابع انتخاب روز مشترک بین calHtml و bindCal (قبلاً فقط به calHtml پاس می‌شد)
+                        const pickMini = (iso) => {
+                                wr.date = iso;
+                                dateInput.value = jal(wr.date);
+                                calBox.classList.add('hidden');
+                                el.querySelector('.modal-head h3').textContent = '➕ افزودن دستی به گزارش کار — ' + jal(wr.date);
+                        };
                         calBox.innerHTML = warn + calHtml({
                                 iso: wr.date,
                                 kind: 'report',
                                 reportDays: repDaysForMonth(wr.date),
                                 selected: wr.date,
                                 compact: true,
-                                onPick: (iso) => {
-                                        wr.date = iso;
-                                        dateInput.value = jal(wr.date);
-                                        calBox.classList.add('hidden');
-                                        el.querySelector('.modal-head h3').textContent = '➕ افزودن دستی به گزارش کار — ' + jal(wr.date);
-                                }
+                                onPick: pickMini
                         });
                         bindCal(calBox, {
                                 getIso: () => wr.date,
+                                onPick: pickMini,
                                 onNav: (firstIso) => { wr.date = firstIso; renderMiniCal(); }
                         });
                 };
