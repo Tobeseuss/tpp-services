@@ -1,0 +1,19 @@
+{
+  "name": "مدیریت سرویس‌های TPP",
+  "short_name": "TPP سرویس‌ها",
+  "description": "مدیریت اطلاعات سرویس‌های اینترنت و تلفن — با قابلیت کار آفلاین و همگام‌سازی خودکار",
+  "lang": "fa",
+  "dir": "rtl",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#f0f2f5",
+  "theme_color": "#1f4e79",
+  "icons": [
+    {
+      "src": "assets/img/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

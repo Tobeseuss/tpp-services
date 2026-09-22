@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="fa">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b1220">
+<script>
+/* تم پیش‌فرض: دارک پرکنتراست — قبل از CSS اعمال می‌شود تا فلش سفید نداشته باشیم */
+(function () {
+  try {
+    var t = localStorage.getItem('tpp-theme');
+    document.documentElement.setAttribute('data-theme', t === 'light' ? 'light' : 'dark');
+  } catch (e) {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  }
+})();
+</script>
+<title>مدیریت سرویس‌های TPP</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="assets/img/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/css/app.css?v=1.20.0">
+</head>
+<body>
+
+<!-- صفحه ورود -->
+<div id="login-screen" class="login-screen hidden">
+        <form class="login-card" id="login-form">
+                <div class="login-logo">
+                        <svg width="56" height="56" viewBox="0 0 24 24" fill="none"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" fill="#1f4e79"/></svg>
+                </div>
+                <h1>مدیریت سرویس‌های TPP</h1>
+                <p class="login-sub" id="login-site"></p>
+                <label>نام کاربری
+                        <input type="text" name="username" autocomplete="username" required autofocus>
+                </label>
+                <label>رمز عبور
+                        <input type="password" name="password" autocomplete="current-password" required>
+                </label>
+                <div class="login-error" id="login-error"></div>
+                <button type="submit" class="btn btn-primary btn-block" id="login-btn">ورود</button>
+                <p class="login-note">با همان نام کاربری و رمز عبور <b>وردپرس</b> وارد شوید. اگر در سایت وارد باشید، ورود خودکار انجام می‌شود؛ نشست شما تا خروج دستی معتبر می‌ماند و حتی هنگام قطع اینترنت، کار با داده‌های ذخیره‌شده ادامه می‌یابد.</p>
+        </form>
+</div>
+
+<!-- برنامه اصلی -->
+<div id="app" class="app hidden">
+        <aside class="sidebar" id="sidebar">
+                <div class="brand">
+                        <svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" fill="currentColor"/></svg>
+                        <span>سرویس‌های TPP</span>
+                </div>
+                <nav id="nav">
+                        <a href="#/dashboard" data-view="dashboard"><i class="ico">📊</i>داشبورد</a>
+                        <a href="#/services" data-view="services" data-cap="tpp_view_services"><i class="ico">🛰️</i>سرویس‌ها</a>
+                        <a href="#/workreport" data-view="workreport" title="گزارش روزانه اقدامات برای مدیران"><i class="ico">📝</i>گزارش کار</a>
+                        <a href="#/history" data-view="history" data-cap="tpp_view_history"><i class="ico">🕘</i>تاریخچه تغییرات</a>
+                        <a href="#/import" data-view="import" data-cap="tpp_import" title="ایمپورت گروهی اکسل — فقط دارندگان قابلیت ایمپورت"><i class="ico">📥</i>ایمپورت اکسل</a>
+                        <a href="#/export" data-view="export" data-cap="tpp_export" title="خروجی اکسل/PDF و پشتیبان — فقط دارندگان قابلیت خروجی"><i class="ico">📤</i>خروجی و پشتیبان</a>
+                        <a href="#/outbox" data-view="outbox"><i class="ico">☁️</i>صف همگام‌سازی <span class="badge hidden" id="outbox-badge"></span></a>
+                        <div class="nav-sep"></div>
+                        <a href="#/review" data-view="review" data-cap="tpp_review_queue,tpp_review_installer" title="بازبینی سرویس‌های ارجاعی و اقدامات نصاب‌ها — ۱.۲۰.۰"><i class="ico">🔁</i>بازبینی</a>
+                        <a href="#/fields" data-view="fields" class="manager-only"><i class="ico">🧩</i>فیلدهای اطلاعاتی</a>
+                        <a href="#/categories" data-view="categories" class="manager-only" title="دسته‌بندی‌ها و تگ‌های سیستمی سرویس‌ها — فقط مدیر کل"><i class="ico">🏷</i>دسته‌بندی پروژه‌ها</a>
+                        <a href="#/roles" data-view="roles" class="manager-only"><i class="ico">🛡️</i>نقش‌ها و دسترسی‌ها</a>
+                                <a href="#/activity" data-view="activity" class="manager-only"><i class="ico">📋</i>گزارش فعالیت</a>
+                        <a href="#/settings" data-view="settings" class="manager-only"><i class="ico">⚙️</i>تنظیمات</a>
+                        <a href="#/api" data-view="api" class="manager-only" title="توکن‌ها و مستندات REST API — اتصال افزونه‌های دیگر"><i class="ico">🔌</i>مرکز API</a>
+                        <a href="#/duplicates" data-view="duplicates" class="admin-only hidden" title="سرویس‌های با مشخصات یکسان — فقط مدیر کل"><i class="ico">👥</i>بررسی موارد تکراری</a>
+                </nav>
+                <div class="sidebar-foot">
+                        <button class="theme-toggle" id="theme-toggle" title="تغییر حالت روشن/تاریک">☀️ حالت روشن</button>
+                        <div id="offline-indicator" class="offline-indicator online">
+                                <span class="dot"></span><span id="net-label">آنلاین</span>
+                        </div>
+                        <div class="user-box">
+                                <span id="user-name"></span>
+                                <button class="link-btn" id="logout-btn" title="خروج">خروج</button>
+                        </div>
+                </div>
+        </aside>
+
+        <main class="main" id="main">
+                <header class="topbar">
+                        <button class="menu-toggle" id="menu-toggle" aria-label="منو">☰</button>
+                        <h2 id="page-title">داشبورد</h2>
+                        <div class="topbar-actions" id="topbar-actions"></div>
+                </header>
+                <div class="content" id="content">
+                        <div class="loading-block"><div class="spinner"></div><p>در حال بارگذاری…</p></div>
+                </div>
+        </main>
+</div>
+
+<div id="toast-wrap" class="toast-wrap"></div>
+<div id="modal-root"></div>
+
+<script src="assets/js/idb.js?v=1.20.0"></script>
+<script src="assets/js/tpp-offline.js?v=1.20.0"></script>
+<script src="assets/js/tpp-app.js?v=1.20.0"></script>
+<script src="assets/js/tpp-views-form.js?v=1.20.0"></script>
+<script src="assets/js/tpp-views-admin.js?v=1.20.0"></script>
+<script src="assets/js/tpp-views-report.js?v=1.20.0"></script>
+        <script src="assets/js/tpp-views-review.js?v=1.20.0"></script>
+<script src="assets/js/tpp-views-api.js?v=1.20.0"></script>
+</body>
+</html>
