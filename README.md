@@ -34,6 +34,7 @@
 | [README-FA.md](README-FA.md) | راهنمای کامل فارسی (نصب، استفاده، تنظیمات، پرسش‌های رایج) |
 | [DEVELOPERS.md](DEVELOPERS.md) | API پی‌اچ‌پی (`tpp()` container)، هوک‌ها و نکات توسعه |
 | [API-DOCUMENTATION.md](API-DOCUMENTATION.md) | مرجع کامل REST API نسخه `tpp/v1` |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | جریان کاری گیت (کامیت/push هر تغییر)، نسخه‌بندی هشت‌نقطه‌ای و فرایند انتشار Release |
 | [readme.txt](readme.txt) | استاندارد وردپرس + changelog نسخه‌ها |
 
 ## 🗂 ساختار
