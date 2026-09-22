@@ -1879,11 +1879,10 @@ TPP.app = (function () {
                 });
 
                 // خروجی اکسل/PDF از نتایج جستجوی فعلی (نیازمند اتصال)
-                const exportNow = async (kind, fname) => {
-                        if (!TPP.offline.state().online) {
-                                toast('خروجی‌گیری به اتصال اینترنت نیاز دارد.', 'warn');
-                                return;
-                        }
+                /* ۱.۲۱.۰ — رفع باگ «خروجی همیشه کل سرویس‌ها»: پارامترهای خروجی با یک تابع مشترک
+                 * از searchState جمع می‌شود — دقیقاً همان فیلترهایی که doSearch می‌فرستد
+                 * (متن جستجو + فیلتر فیلدها + بازه ویرایش + وضعیت دایری + دسته/تگ). */
+                const collectSearchParams = () => {
                         const params = {};
                         if (searchState.query) params.query = searchState.query;
                         if (Object.keys(searchState.filters || {}).length) params.filters = JSON.stringify(searchState.filters);
@@ -1895,6 +1894,17 @@ TPP.app = (function () {
                                 params.progress_step = searchState.prog.step;
                                 params.progress_step_state = searchState.prog.stepState || 'done';
                         }
+                        /* ۱.۱۹.۰ — فیلتر دسته‌بندی/تگ (۱.۲۱.۰: در خروجی هم اعمال می‌شود) */
+                        if (searchState.cat) params.category = searchState.cat;
+                        if (searchState.tags && searchState.tags.length) params.tags = searchState.tags.join(',');
+                        return params;
+                };
+                const exportNow = async (kind, fname) => {
+                        if (!TPP.offline.state().online) {
+                                toast('خروجی‌گیری به اتصال اینترنت نیاز دارد.', 'warn');
+                                return;
+                        }
+                        const params = collectSearchParams();
                         toast('در حال ساخت فایل ' + (kind === 'pdf' ? 'PDF' : 'اکسل') + '…');
                         try { await TPP.api.download('export/' + kind, params, fname); }
                         catch (e) { toast('خطا در تولید خروجی: ' + esc(e.message), 'error', 7000); }
@@ -1904,17 +1914,7 @@ TPP.app = (function () {
                                 toast('خروجی چاپ به اتصال اینترنت نیاز دارد.', 'warn');
                                 return;
                         }
-                        const params = {};
-                        if (searchState.query) params.query = searchState.query;
-                        if (Object.keys(searchState.filters || {}).length) params.filters = JSON.stringify(searchState.filters);
-                        if (searchState.updFrom) params.upd_from = searchState.updFrom;
-                        if (searchState.updTo) params.upd_to = searchState.updTo;
-                        /* ۱.۱۲.۰ — فیلتر وضعیت دایری */
-                        if (searchState.prog && searchState.prog.status) params.progress_status = searchState.prog.status;
-                        if (searchState.prog && searchState.prog.step) {
-                                params.progress_step = searchState.prog.step;
-                                params.progress_step_state = searchState.prog.stepState || 'done';
-                        }
+                        const params = collectSearchParams();
                         toast('در حال آماده‌سازی صفحه چاپ…');
                         try { await TPP.api.openHtml('export/print', params); }
                         catch (e) { toast('خطا در آماده‌سازی چاپ: ' + esc(e.message), 'error', 7000); }

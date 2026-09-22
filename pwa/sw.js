@@ -12,7 +12,7 @@
  */
 'use strict';
 
-const SW_VERSION = 'tpp-v1.20.0';
+const SW_VERSION = 'tpp-v1.21.0';
 const SHELL_CACHE = 'tpp-shell-' + SW_VERSION;
 const DATA_CACHE  = 'tpp-data-' + SW_VERSION;
 
@@ -20,15 +20,15 @@ const SHELL_ASSETS = [
         './index.html',
         './manifest.json',
         './assets/img/icon.svg',
-        './assets/css/app.css?v=1.20.0',
-        './assets/js/idb.js?v=1.20.0',
-        './assets/js/tpp-offline.js?v=1.20.0',
-        './assets/js/tpp-app.js?v=1.20.0',
-        './assets/js/tpp-views-form.js?v=1.20.0',
-        './assets/js/tpp-views-admin.js?v=1.20.0',
-        './assets/js/tpp-views-report.js?v=1.20.0',
-        './assets/js/tpp-views-review.js?v=1.20.0',
-        './assets/js/tpp-views-api.js?v=1.20.0'
+        './assets/css/app.css?v=1.21.0',
+        './assets/js/idb.js?v=1.21.0',
+        './assets/js/tpp-offline.js?v=1.21.0',
+        './assets/js/tpp-app.js?v=1.21.0',
+        './assets/js/tpp-views-form.js?v=1.21.0',
+        './assets/js/tpp-views-admin.js?v=1.21.0',
+        './assets/js/tpp-views-report.js?v=1.21.0',
+        './assets/js/tpp-views-review.js?v=1.21.0',
+        './assets/js/tpp-views-api.js?v=1.21.0'
 ];
 
 self.addEventListener('install', (event) => {

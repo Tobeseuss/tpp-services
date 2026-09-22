@@ -256,13 +256,9 @@ class TPP_Fields {
                         array( 'service', 'f_mobile',         'شماره موبایل',           'tel',  0, 1, 0, 'f_phone' ),
                         array( 'service', 'f_national_id_line',   'کد ملی مالک خط',     'text', 0, 1, 0, 'f_mobile' ),
                         array( 'service', 'f_national_id_service', 'کد ملی مالک سرویس', 'text', 0, 1, 0, 'f_national_id_line' ),
-                        array( 'service', 'f_internet_status','آخرین وضعیت اینترنت',    'text', 0, 1, 0, '' ),
-                        array( 'service', 'f_phone_status',   'آخرین وضعیت تلفن',       'text', 0, 1, 0, '' ),
-                        array( 'service', 'f_wifi24_name',    'نام وای‌فای ۲.۴ گیگاهرتز', 'text', 0, 1, 0, 'f_modem_serial' ),
-                        array( 'service', 'f_wifi24_pass',    'رمز وای‌فای ۲.۴ گیگاهرتز', 'text', 0, 0, 0, 'f_wifi24_name' ),
-                        array( 'service', 'f_wifi5_name',     'نام وای‌فای ۵ گیگاهرتز',  'text', 0, 1, 0, 'f_wifi24_pass' ),
-                        array( 'service', 'f_wifi5_pass',     'رمز وای‌فای ۵ گیگاهرتز',  'text', 0, 0, 0, 'f_wifi5_name' ),
                         array( 'service', 'f_description',    'توضیحات',                'textarea', 0, 0, 0, '' ),
+                        // ۱.۲۱.۰ — به‌جای شش فیلد حذف‌شده (وضعیت اینترنت/تلفن + وای‌فای‌ها)؛ ستون‌های یتیم با «بروزآوری دیتابیس» به همین فیلد منتقل و حذف می‌شوند
+                        array( 'service', 'f_misc_notes',     'توضیحات متفرقه',         'textarea', 0, 1, 0, 'f_description' ),
                 );
                 $order = array( 'address' => 0, 'service' => 0 );
                 foreach ( $defaults as $d ) {
@@ -299,10 +295,8 @@ class TPP_Fields {
                         array( 'service', 'f_national_id_line', 'کد ملی مالک خط', 'text', 0, 1, 0, 'f_mobile' ),
                         array( 'service', 'f_national_id_service', 'کد ملی مالک سرویس', 'text', 0, 1, 0, 'f_national_id_line' ),
                         array( 'address', 'f_center_name', 'نام مرکز', 'text', 0, 1, 0, 'f_postal_code' ),
-                        array( 'service', 'f_wifi24_name', 'نام وای‌فای ۲.۴ گیگاهرتز', 'text', 0, 1, 0, 'f_modem_serial' ),
-                        array( 'service', 'f_wifi24_pass', 'رمز وای‌فای ۲.۴ گیگاهرتز', 'text', 0, 0, 0, 'f_wifi24_name' ),
-                        array( 'service', 'f_wifi5_name', 'نام وای‌فای ۵ گیگاهرتز', 'text', 0, 1, 0, 'f_wifi24_pass' ),
-                        array( 'service', 'f_wifi5_pass', 'رمز وای‌فای ۵ گیگاهرتز', 'text', 0, 0, 0, 'f_wifi5_name' ),
+                        // ۱.۲۱.۰ — فیلد جدید «توضیحات متفرقه» برای نصب‌های قبلی (جایگزین شش فیلد حذف‌شده)
+                        array( 'service', 'f_misc_notes', 'توضیحات متفرقه', 'textarea', 0, 1, 0, 'f_description' ),
                 );
                 $skip = (array) get_option( 'tpp_seed_skip', array() );
                 foreach ( $missing as $d ) {
@@ -543,5 +537,178 @@ class TPP_Fields {
                         return is_email( $single ) ? $single : sanitize_email( $single );
                 }
                 return $value;
+        }
+
+        /* =====================================================================
+         * ۱.۲۱.۰ — بازنشستگی فیلدهای حذف‌شده + «بروزآوری دیتابیس»
+         * ===================================================================== */
+
+        /** برچسب فارسی فیلدهای پیش‌فرضِ بازنشسته‌شده (برای قالب‌بندی انتقال به «توضیحات متفرقه») */
+        const RETIRED_LABELS = array(
+                'f_internet_status' => 'آخرین وضعیت اینترنت',
+                'f_phone_status'    => 'آخرین وضعیت تلفن',
+                'f_wifi24_name'     => 'نام وای‌فای ۲.۴ گیگاهرتز',
+                'f_wifi24_pass'     => 'رمز وای‌فای ۲.۴ گیگاهرتز',
+                'f_wifi5_name'      => 'نام وای‌فای ۵ گیگاهرتز',
+                'f_wifi5_pass'      => 'رمز وای‌فای ۵ گیگاهرتز',
+        );
+
+        /**
+         * مهاجرت ۱.۲۱.۰ — تعریف شش فیلد بازنشسته از tpp_fields حذف می‌شود ولی
+         * ستون فیزیکی و داده‌ها سر جایشان می‌مانند (ستون «یتیم») تا مدیر با دکمه
+         * «بروزآوری دیتابیس» محتوایشان را به «توضیحات متفرقه» منتقل و ستون‌ها را حذف کند.
+         * idempotent: اجرای مجدد کاری نمی‌کند.
+         */
+        public static function retire_fields_v1210() {
+                $skip   = (array) get_option( 'tpp_seed_skip', array() );
+                $dirty  = false;
+                foreach ( array_keys( self::RETIRED_LABELS ) as $slug ) {
+                        $f = self::get( $slug );
+                        if ( $f ) {
+                                TPP_DB::delete( 'fields', array( 'slug' => $slug ) );
+                                $dirty = true;
+                        }
+                        if ( ! in_array( $slug, $skip, true ) ) {
+                                $skip[] = $slug; // دیگر هرگز seed نشود (حتی اگر ستون موجود باشد)
+                                $dirty = true;
+                        }
+                }
+                if ( $dirty ) {
+                        update_option( 'tpp_seed_skip', array_values( array_unique( $skip ) ), false );
+                        self::flush_cache();
+                }
+        }
+
+        /** ستون‌های ثابت (سیستمی) هر جدول — هرگز جزو فیلدهای داینامیک نیستند */
+        private static function protected_columns( $group ) {
+                if ( 'address' === $group ) {
+                        return array( 'id', 'created_by', 'created_at', 'updated_at', 'version' );
+                }
+                return array(
+                        'id', 'address_id', 'created_by', 'created_at', 'updated_at', 'version',
+                        'progress_steps', 'progress_done', 'progress_failure', 'progress_updated_at',
+                        'progress_excluded', 'progress_failures', 'category_id', 'service_tags', 'is_conflict',
+                );
+        }
+
+        /**
+         * یافتن ستون‌های یتیم — ستون‌های فیزیکی که دیگر به هیچ فیلد فعال تعریف‌شده تعلق ندارند.
+         * خروجی: [ group => [ col => label ] ]
+         */
+        public static function orphan_columns() {
+                $out = array();
+                foreach ( array( 'service' => 'services', 'address' => 'addresses' ) as $group => $table_name ) {
+                        $table  = TPP_DB::table( $table_name );
+                        if ( ! $table ) {
+                                continue;
+                        }
+                        $active = array();
+                        foreach ( self::all( $group ) as $f ) {
+                                $active[ $f['slug'] ] = (string) $f['label'];
+                        }
+                        $cols = TPP_DB::get_results( "SHOW COLUMNS FROM {$table}" );
+                        foreach ( (array) $cols as $c ) {
+                                $col = (string) $c['Field'];
+                                if ( in_array( $col, self::protected_columns( $group ), true ) || isset( $active[ $col ] ) ) {
+                                        continue;
+                                }
+                                $label = isset( self::RETIRED_LABELS[ $col ] ) ? self::RETIRED_LABELS[ $col ] : $col;
+                                $out[ $group ][ $col ] = $label;
+                        }
+                }
+                return $out;
+        }
+
+        /**
+         * «بروزآوری دیتابیس» (۱.۲۱.۰ — درخواست کاربر):
+         *  ۱) ستون‌های یتیم هر دو جدول services/addresses پیدا می‌شوند
+         *  ۲) محتوای غیرخالی هر ستون به‌صورت قالب‌بندی‌شده به «توضیحات متفرقه» همان سرویس اضافه می‌شود
+         *     (فیلدهای گروه آدرس از طریق address_id به سرویس‌های همان آدرس می‌رسند)
+         *  ۳) پس از انتقال کامل، ستون یتیم به‌طور کامل از دیتابیس حذف می‌شود
+         * خروجی: گزارش { backup, services_table, addresses_table, services_updated, dropped }
+         */
+        public static function db_update_run( $user_id = 0 ) {
+                $orphans = self::orphan_columns();
+                $report  = array(
+                        'services_table'   => array(),
+                        'addresses_table'  => array(),
+                        'services_updated' => 0,
+                        'dropped'          => array(),
+                );
+
+                $st = TPP_DB::table( 'services' );
+                $at = TPP_DB::table( 'addresses' );
+                if ( ! $st ) {
+                        return $report;
+                }
+
+                // فیلد مقصد — اگر به هر دلیلی موجود نیست بساز (seed آن در ارتقا انجام شده)
+                if ( ! self::get( 'f_misc_notes' ) ) {
+                        self::ensure_column( $st, 'f_misc_notes', 'TEXT NULL' );
+                        $order = (int) TPP_DB::get_var( "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM " . TPP_DB::table( 'fields' ) . " WHERE group_key = %s", array( 'service' ) );
+                        TPP_DB::insert( 'fields', array(
+                                'group_key' => 'service', 'slug' => 'f_misc_notes', 'label' => 'توضیحات متفرقه',
+                                'field_type' => 'textarea', 'is_required' => 0, 'is_searchable' => 1, 'is_sensitive' => 0,
+                                'options' => null, 'sort_order' => $order, 'created_at' => TPP_Date::now(),
+                        ) );
+                        self::flush_cache();
+                }
+
+                $misc = 'f_misc_notes';
+
+                /* --- جدول سرویس‌ها: انتقال + حذف ستون --- */
+                if ( ! empty( $orphans['service'] ) ) {
+                        foreach ( $orphans['service'] as $col => $label ) {
+                                if ( ! preg_match( '/^[a-z0-9_]{1,64}$/', $col ) ) {
+                                        continue; // امنیت نام ستون
+                                }
+                                $rows = TPP_DB::get_results( "SELECT id, `{$col}` AS v FROM {$st} WHERE `{$col}` IS NOT NULL AND `{$col}` <> ''" );
+                                $moved = 0;
+                                foreach ( (array) $rows as $r ) {
+                                        $old  = (string) TPP_DB::get_var( "SELECT {$misc} FROM {$st} WHERE id = %d", array( (int) $r['id'] ) );
+                                        $block = '🔹 «' . $label . '»: ' . self::sanitize_multiline( $r['v'] );
+                                        $new  = ( '' !== trim( (string) $old ) ) ? ( $old . "\n\n" . $block ) : $block;
+                                        TPP_DB::update( 'services', array( $misc => $new ), array( 'id' => (int) $r['id'] ) );
+                                        $moved++;
+                                }
+                                TPP_DB::query( "ALTER TABLE {$st} DROP COLUMN `{$col}`" );
+                                $report['services_table'][] = array( 'column' => $col, 'label' => $label, 'rows' => $moved );
+                                $report['dropped'][] = 'services.' . $col;
+                                $report['services_updated'] += $moved;
+                        }
+                }
+
+                /* --- جدول آدرس‌ها: انتقال به سرویس‌های متصل (با join) + حذف ستون --- */
+                if ( ! empty( $orphans['address'] ) && $at ) {
+                        foreach ( $orphans['address'] as $col => $label ) {
+                                if ( ! preg_match( '/^[a-z0-9_]{1,64}$/', $col ) ) {
+                                        continue;
+                                }
+                                $rows = TPP_DB::get_results( "SELECT s.id AS sid, a.`{$col}` AS v FROM {$at} a INNER JOIN {$st} s ON s.address_id = a.id WHERE a.`{$col}` IS NOT NULL AND a.`{$col}` <> ''" );
+                                $moved = 0;
+                                foreach ( (array) $rows as $r ) {
+                                        $old   = (string) TPP_DB::get_var( "SELECT {$misc} FROM {$st} WHERE id = %d", array( (int) $r['sid'] ) );
+                                        $block = '🔹 «' . $label . '» (اطلاعات آدرس): ' . self::sanitize_multiline( $r['v'] );
+                                        $new   = ( '' !== trim( (string) $old ) ) ? ( $old . "\n\n" . $block ) : $block;
+                                        TPP_DB::update( 'services', array( $misc => $new ), array( 'id' => (int) $r['sid'] ) );
+                                        $moved++;
+                                }
+                                TPP_DB::query( "ALTER TABLE {$at} DROP COLUMN `{$col}`" );
+                                $report['addresses_table'][] = array( 'column' => $col, 'label' => $label, 'rows' => $moved );
+                                $report['dropped'][] = 'addresses.' . $col;
+                                $report['services_updated'] += $moved;
+                        }
+                }
+
+                // خلاصه اجرا در گزینه برای گزارش «آخرین بروزآوری»
+                if ( ! empty( $report['dropped'] ) ) {
+                        update_option( 'tpp_last_db_update', array(
+                                'at'   => TPP_Date::now(),
+                                'by'   => (int) $user_id,
+                                'cols' => $report['dropped'],
+                                'rows' => $report['services_updated'],
+                        ), false );
+                }
+                return $report;
         }
 }

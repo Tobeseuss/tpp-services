@@ -760,10 +760,21 @@ TPP.views = TPP.views || {};
         function exportParams() {
                 const scope = document.getElementById('exp-scope').value;
                 if (scope === 'filtered' && TPP.app.searchState) {
+                        /* ۱.۲۱.۰ — همه فیلترهای آخرین جستجو (مثل صفحه سرویس‌ها): متن + فیلتر فیلدها +
+                         * بازه ویرایش + وضعیت دایری + دسته/تگ — قبلاً فقط متن/فیلتر رد می‌شد */
                         const st = TPP.app.searchState;
                         const params = {};
                         if (st.query) params.query = st.query;
                         if (Object.keys(st.filters || {}).length) params.filters = JSON.stringify(st.filters);
+                        if (st.updFrom) params.upd_from = st.updFrom;
+                        if (st.updTo) params.upd_to = st.updTo;
+                        if (st.prog && st.prog.status) params.progress_status = st.prog.status;
+                        if (st.prog && st.prog.step) {
+                                params.progress_step = st.prog.step;
+                                params.progress_step_state = st.prog.stepState || 'done';
+                        }
+                        if (st.cat) params.category = st.cat;
+                        if (st.tags && st.tags.length) params.tags = st.tags.join(',');
                         return params;
                 }
                 return {};
@@ -1326,6 +1337,11 @@ TPP.views = TPP.views || {};
          * دسته‌بندی پروژه‌ها و تگ‌های سیستمی (۱.۱۹.۰) — فقط مدیر کل (پیش‌فرض)
          * ============================================================ */
 
+        /* ============================================================
+         * دسته‌بندی پروژه‌ها — ۱.۲۱.۰ بازطراحی (درخواست کاربر):
+         * فرم‌های افزودن بالای فهرست‌ها + جستجوی زنده برای ویرایش/حذف + صفحه‌بندی سرور-سمت
+         * ============================================================ */
+
         TPP.views.categories = async function () {
                 if (!can('tpp_manage_categories')) {
                         document.getElementById('content').innerHTML = '<div class="alert err">این بخش فقط برای مدیر کل سایت (یا نقش دارای قابلیت «دسته‌بندی پروژه‌ها») در دسترس است.</div>';
@@ -1335,68 +1351,68 @@ TPP.views = TPP.views || {};
                         document.getElementById('content').innerHTML = '<div class="alert warn">مدیریت دسته‌بندی‌ها به اتصال اینترنت نیاز دارد.</div>';
                         return;
                 }
-                const render = async () => {
-                        let cats = null;
-                        try { cats = await TPP.api.request('GET', 'categories'); }
-                        catch (e) {
-                                document.getElementById('content').innerHTML = '<div class="alert err">خطا در دریافت دسته‌بندی‌ها: ' + esc(e.message) + '</div>';
-                                return;
-                        }
-                        TPP.app.state().cats = cats; // کش برای فرم سرویس/فیلترها
-                        const catList = cats.categories || [];
-                        const tagList = cats.tags || [];
-                        const faNum = (n) => String(n).replace(/[0-9]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[+d]);
+                const faNum2 = (n) => String(n).replace(/[0-9]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[+d]);
+                const PER = 20; // تعداد در هر صفحه
+                const st = { catQ: '', catPage: 1, tagQ: '', tagPage: 1 };
 
-                        const itemRow = (c, kind) => `
+                const itemRow = (c, kind) => `
                         <div class="cat-item" data-id="${esc(String(c.id))}" data-kind="${esc(kind)}">
-                                <b class="cat-label">${esc(c.label)}</b>
-                                <span class="chip">${faNum(c.usage)} سرویس</span>
+                                <b class="cat-label">${esc(c.label)}${c.is_review ? ' <span class="chip" title="دسته پیش‌فرض ارجاع به بازبینی">⏳ پیش‌فرض بازبینی</span>' : ''}</b>
+                                <span class="chip">${faNum2(c.usage)} سرویس</span>
                                 <button class="btn btn-sm" data-cedit="${esc(String(c.id))}" title="ویرایش نام">✏️</button>
                                 <button class="btn btn-sm btn-danger" data-cdel="${esc(String(c.id))}" data-kind="${esc(kind)}" data-label="${esc(c.label)}" title="حذف">🗑</button>
                         </div>`;
 
-                        document.getElementById('content').innerHTML = `
-                        <div class="alert info">
-                                🏷 دسته‌بندی‌ها و تگ‌های سیستمی که در فرم ثبت/ویرایش سرویس و فیلترهای جستجو به‌کار می‌روند.
-                                دسته‌بندی برای هر سرویس <b>اجباری</b> است (وقتی حداقل یک دسته تعریف شود)؛ تگ‌ها اختیاری و چندتایی‌اند.
-                                حذف دسته در حال استفاده ممکن نیست؛ حذف تگ آن را از سرویس‌ها جدا می‌کند.
-                        </div>
-                        <div class="card">
-                                <h3>📂 دسته‌بندی‌ها (${faNum(catList.length)})</h3>
-                                ${catList.length ? catList.map((c) => itemRow(c, 'category')).join('') : '<p class="muted">هنوز دسته‌بندی‌ای تعریف نشده است.</p>'}
-                                <div class="actions-row" style="margin-top:10px">
-                                        <input type="text" id="cat-new" class="btn" placeholder="نام دسته‌بندی جدید — مثال: پروژه سازمانی" style="min-width:240px">
-                                        <button class="btn btn-primary" id="cat-add">➕ افزودن دسته‌بندی</button>
-                                </div>
-                        </div>
-                        <div class="card">
-                                <h3>🏷 تگ‌ها (${faNum(tagList.length)})</h3>
-                                ${tagList.length ? tagList.map((c) => itemRow(c, 'tag')).join('') : '<p class="muted">هنوز تگی تعریف نشده است.</p>'}
-                                <div class="actions-row" style="margin-top:10px">
-                                        <input type="text" id="tag-new" class="btn" placeholder="نام تگ جدید — مثال: اولویت بالا" style="min-width:240px">
-                                        <button class="btn btn-primary" id="tag-add">➕ افزودن تگ</button>
-                                </div>
-                        </div>`;
+                /** فهرست صفحه‌بندی‌شده یک نوع (category|tag) از سرور */
+                const fetchKind = async (kind, q, page) => {
+                        const params = { kind: kind, page: page, per_page: PER };
+                        if (q) params.q = q;
+                        return await TPP.api.request('GET', 'categories', null, params);
+                };
 
-                        const doAdd = async (kind, inputId) => {
-                                const inp = document.getElementById(inputId);
-                                const label = inp.value.trim();
-                                if (!label) { toast('نام را وارد کنید.', 'warn'); inp.focus(); return; }
-                                try {
-                                        await TPP.api.request('POST', 'categories', { kind: kind, label: label });
-                                        toast((kind === 'tag' ? 'تگ' : 'دسته‌بندی') + ' «' + label + '» ساخته شد.', 'success');
-                                        render();
-                                } catch (e) { toast('خطا: ' + esc(e.message), 'error', 7000); }
-                        };
-                        document.getElementById('cat-add').addEventListener('click', () => doAdd('category', 'cat-new'));
-                        document.getElementById('tag-add').addEventListener('click', () => doAdd('tag', 'tag-new'));
-                        document.getElementById('cat-new').addEventListener('keydown', (e) => { if (e.key === 'Enter') doAdd('category', 'cat-new'); });
-                        document.getElementById('tag-new').addEventListener('keydown', (e) => { if (e.key === 'Enter') doAdd('tag', 'tag-new'); });
+                /** بلوک ناوبری صفحه‌بندی */
+                const pagerHtml = (page, per, total) => {
+                        const pages = Math.max(1, Math.ceil(total / per));
+                        if (pages <= 1) return '<p class="muted" style="text-align:center">' + faNum2(total) + ' مورد</p>';
+                        let btns = '';
+                        const from = Math.max(1, Math.min(page - 4, pages - 9));
+                        const to = Math.min(pages, from + 9);
+                        if (from > 1) btns += '<button class="btn btn-sm" data-pg="1">۱</button><span class="muted">…</span>';
+                        for (let i = from; i <= to; i++) btns += '<button class="btn btn-sm' + (i === page ? ' btn-primary' : '') + '" data-pg="' + i + '">' + faNum2(i) + '</button>';
+                        if (to < pages) btns += '<span class="muted">…</span><button class="btn btn-sm" data-pg="' + pages + '">' + faNum2(pages) + '</button>';
+                        return '<div class="pagination">' + btns + '<span class="page-info">صفحه ' + faNum2(page) + ' از ' + faNum2(pages) + ' — ' + faNum2(total) + ' مورد</span></div>';
+                };
 
-                        document.querySelectorAll('[data-cedit]').forEach((b) => b.addEventListener('click', async () => {
-                                const row = b.closest('.cat-item');
-                                const label = row.querySelector('.cat-label').textContent;
-                                // ویرایش نام با مودال ساده (بدون prompt مرورگر)
+                /** رندر یک کارت (دسته‌بندی‌ها یا تگ‌ها) */
+                const renderKind = async (kind) => {
+                        const isTag = kind === 'tag';
+                        const q = isTag ? st.tagQ : st.catQ;
+                        const page = isTag ? st.tagPage : st.catPage;
+                        const listEl = document.getElementById(isTag ? 'tag-list' : 'cat-list');
+                        const countEl = document.getElementById(isTag ? 'tag-count' : 'cat-count');
+                        const pagerEl = document.getElementById(isTag ? 'tag-pager' : 'cat-pager');
+                        if (!listEl) return;
+                        listEl.innerHTML = '<div class="loading-block"><div class="spinner"></div></div>';
+                        let res;
+                        try { res = await fetchKind(kind, q, page); }
+                        catch (e) { listEl.innerHTML = '<div class="alert err">خطا: ' + esc(e.message) + '</div>'; return; }
+                        const items = res.items || [];
+                        const total = parseInt(res.total, 10) || 0;
+                        if (countEl) countEl.textContent = faNum2(total);
+                        listEl.innerHTML = items.length ? items.map((c) => itemRow(c, kind)).join('')
+                                : (q ? '<p class="muted">موردی با عبارت «' + esc(q) + '» یافت نشد.</p>' : (isTag ? '<p class="muted">هنوز تگی تعریف نشده است.</p>' : '<p class="muted">هنوز دسته‌بندی‌ای تعریف نشده است.</p>'));
+                        if (pagerEl) {
+                                pagerEl.innerHTML = pagerHtml(page, PER, total);
+                                pagerEl.querySelectorAll('[data-pg]').forEach((b) => b.addEventListener('click', () => {
+                                        if (isTag) st.tagPage = parseInt(b.getAttribute('data-pg'), 10) || 1;
+                                        else st.catPage = parseInt(b.getAttribute('data-pg'), 10) || 1;
+                                        renderKind(kind);
+                                }));
+                        }
+                        // اتصال دکمه‌های ویرایش/حذف همین صفحه
+                        listEl.querySelectorAll('[data-cedit]').forEach((b) => b.addEventListener('click', async () => {
+                                const rowEl = b.closest('.cat-item');
+                                const label = rowEl.querySelector('.cat-label').textContent.replace('⏳ پیش‌فرض بازبینی', '').trim();
                                 const nu = await new Promise((resolve) => {
                                         const mm = modal(
                                                 '<div class="modal-head"><h3>✏️ ویرایش نام</h3><button class="modal-close" data-close>×</button></div>' +
@@ -1410,28 +1426,107 @@ TPP.views = TPP.views || {};
                                         mm.el.querySelector('#cat-edit-ok').addEventListener('click', () => done(inp.value));
                                         inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') done(inp.value); });
                                         mm.el.querySelector('[data-close]').addEventListener('click', () => resolve(null));
-                                        setTimeout(() => { try { inp.focus(); inp.select(); } catch (e) {} }, 50);
+                                        setTimeout(() => { try { inp.focus(); inp.select(); } catch (e2) {} }, 50);
                                 });
                                 if (nu === null || !nu.trim() || nu.trim() === label) return;
                                 try {
                                         await TPP.api.request('PUT', 'categories/' + b.getAttribute('data-cedit'), { label: nu.trim() });
                                         toast('به‌روز شد.', 'success');
-                                        render();
+                                        renderKind(kind);
                                 } catch (e) { toast('خطا: ' + esc(e.message), 'error', 7000); }
                         }));
-                        document.querySelectorAll('[data-cdel]').forEach((b) => b.addEventListener('click', async () => {
-                                const kind = b.getAttribute('data-kind');
+                        listEl.querySelectorAll('[data-cdel]').forEach((b) => b.addEventListener('click', async () => {
+                                const kind2 = b.getAttribute('data-kind');
                                 const label = b.getAttribute('data-label');
-                                if (!await confirmBox((kind === 'tag' ? 'تگ' : 'دسته‌بندی') + ' «' + label + '» حذف شود؟' +
-                                        (kind === 'tag' ? '<br><span class="muted">تگ از سرویس‌های دارای آن جدا و سپس حذف می‌شود.</span>' : '<br><span class="muted">دسته در حال استفاده حذف نمی‌شود.</span>'), 'حذف')) return;
+                                if (!await confirmBox((kind2 === 'tag' ? 'تگ' : 'دسته‌بندی') + ' «' + label + '» حذف شود؟' +
+                                        (kind2 === 'tag' ? '<br><span class="muted">تگ از سرویس‌های دارای آن جدا و سپس حذف می‌شود.</span>' : '<br><span class="muted">دسته در حال استفاده حذف نمی‌شود؛ دسته پیش‌فرض بازبینی قابل حذف نیست.</span>'), 'حذف')) return;
                                 try {
                                         await TPP.api.request('DELETE', 'categories/' + b.getAttribute('data-cdel'));
                                         toast('حذف شد.', 'success');
-                                        render();
+                                        renderKind(kind2);
                                 } catch (e) { toast('خطا: ' + esc(e.message), 'error', 7000); }
                         }));
                 };
-                await render();
+
+                document.getElementById('content').innerHTML = `
+                        <div class="alert info">
+                                🏷 دسته‌بندی‌ها و تگ‌های سیستمی که در فرم ثبت/ویرایش سرویس و فیلترهای جستجو به‌کار می‌روند.
+                                دسته‌بندی برای هر سرویس <b>اجباری</b> است (وقتی حداقل یک دسته تعریف شود)؛ تگ‌ها اختیاری و چندتایی‌اند.
+                                حذف دسته در حال استفاده ممکن نیست؛ حذف تگ آن را از سرویس‌ها جدا می‌کند. فهرست‌ها صفحه‌بندی شده‌اند و با جستجو می‌توانید مورد دلخواه را برای ویرایش/حذف پیدا کنید.
+                        </div>
+                        <div class="card">
+                                <h3>📂 دسته‌بندی‌ها (<span id="cat-count">…</span>)</h3>
+                                <div class="actions-row" style="flex-wrap:wrap">
+                                        <input type="text" id="cat-new" class="btn" placeholder="نام دسته‌بندی جدید — مثال: پروژه سازمانی" style="min-width:240px">
+                                        <button class="btn btn-primary" id="cat-add">➕ افزودن دسته‌بندی</button>
+                                </div>
+                                <div class="divider"></div>
+                                <div class="actions-row" style="flex-wrap:wrap">
+                                        <input type="text" id="cat-q" class="btn" placeholder="🔍 جستجوی دسته‌بندی برای ویرایش/حذف…" value="${esc(st.catQ)}" style="min-width:240px">
+                                        <button class="btn btn-sm" id="cat-q-clear" title="پاک‌کردن جستجو">✕</button>
+                                </div>
+                                <div id="cat-list" style="margin-top:10px"></div>
+                                <div id="cat-pager"></div>
+                        </div>
+                        <div class="card">
+                                <h3>🏷 تگ‌ها (<span id="tag-count">…</span>)</h3>
+                                <div class="actions-row" style="flex-wrap:wrap">
+                                        <input type="text" id="tag-new" class="btn" placeholder="نام تگ جدید — مثال: اولویت بالا" style="min-width:240px">
+                                        <button class="btn btn-primary" id="tag-add">➕ افزودن تگ</button>
+                                </div>
+                                <div class="divider"></div>
+                                <div class="actions-row" style="flex-wrap:wrap">
+                                        <input type="text" id="tag-q" class="btn" placeholder="🔍 جستجوی تگ برای ویرایش/حذف…" value="${esc(st.tagQ)}" style="min-width:240px">
+                                        <button class="btn btn-sm" id="tag-q-clear" title="پاک‌کردن جستجو">✕</button>
+                                </div>
+                                <div id="tag-list" style="margin-top:10px"></div>
+                                <div id="tag-pager"></div>
+                        </div>`;
+
+                const doAdd = async (kind, inputId) => {
+                        const inp = document.getElementById(inputId);
+                        const label = inp.value.trim();
+                        if (!label) { toast('نام را وارد کنید.', 'warn'); inp.focus(); return; }
+                        try {
+                                await TPP.api.request('POST', 'categories', { kind: kind, label: label });
+                                toast((kind === 'tag' ? 'تگ' : 'دسته‌بندی') + ' «' + label + '» ساخته شد.', 'success');
+                                inp.value = '';
+                                // افزودن موفق → صفحه اول همان نوع با جستجوی خالی رفرش شود تا مورد جدید دیده شود
+                                if (kind === 'tag') { st.tagQ = ''; st.tagPage = 1; document.getElementById('tag-q').value = ''; }
+                                else { st.catQ = ''; st.catPage = 1; document.getElementById('cat-q').value = ''; }
+                                renderKind(kind);
+                        } catch (e) { toast('خطا: ' + esc(e.message), 'error', 7000); }
+                };
+                document.getElementById('cat-add').addEventListener('click', () => doAdd('category', 'cat-new'));
+                document.getElementById('tag-add').addEventListener('click', () => doAdd('tag', 'tag-new'));
+                document.getElementById('cat-new').addEventListener('keydown', (e) => { if (e.key === 'Enter') doAdd('category', 'cat-new'); });
+                document.getElementById('tag-new').addEventListener('keydown', (e) => { if (e.key === 'Enter') doAdd('tag', 'tag-new'); });
+
+                /* جستجوی زنده (debounce) + دکمه پاک‌کردن */
+                const bindSearch = (kind) => {
+                        const isTag = kind === 'tag';
+                        const qEl = document.getElementById(isTag ? 'tag-q' : 'cat-q');
+                        const clr = document.getElementById(isTag ? 'tag-q-clear' : 'cat-q-clear');
+                        let t = null;
+                        qEl.addEventListener('input', () => {
+                                if (t) clearTimeout(t);
+                                t = setTimeout(() => {
+                                        if (isTag) { st.tagQ = qEl.value.trim(); st.tagPage = 1; }
+                                        else { st.catQ = qEl.value.trim(); st.catPage = 1; }
+                                        renderKind(kind);
+                                }, 300);
+                        });
+                        clr.addEventListener('click', () => {
+                                qEl.value = '';
+                                if (isTag) { st.tagQ = ''; st.tagPage = 1; } else { st.catQ = ''; st.catPage = 1; }
+                                renderKind(kind);
+                        });
+                };
+                bindSearch('category');
+                bindSearch('tag');
+
+                await renderKind('category');
+                await renderKind('tag');
         };
 
         /* ============================================================
@@ -1562,9 +1657,31 @@ TPP.views = TPP.views || {};
                                         <div class="hint">نسخه‌های قدیمی‌تر خودکار حذف می‌شوند تا پوشه پشتیبان‌ها پر نشود.</div>
                                 </div>
                         </div>
+                        <div class="divider"></div>
+                        <h3>🔁 بازبینی اقدامات نصاب‌ها (۱.۲۱.۰)</h3>
+                        <div class="grid-2">
+                                <div class="field">
+                                        <label>تعداد روز تایید خودکار اقدامات نصاب‌ها (۰ = غیرفعال)</label>
+                                        <input type="number" id="st-review-auto-days" value="${s.review_auto_days !== undefined ? s.review_auto_days : 7}" min="0" max="3650">
+                                        <div class="hint">تغییرات ثبت/ویرایش/حذف نصاب‌ها پس از این تعداد روز به‌طور خودکار تایید نهایی می‌شوند و دیگر در صف بازبینی نمی‌مانند (کرون روزانه). <b>سرویس‌هایی که دسته‌بندی‌شان «ثبت جهت بازبینی و ویرایش یا تأیید مدیریت» است مستثنا هستند</b> و تا بازبینی دستی در صف می‌مانند.</div>
+                                </div>
+                                <div class="field">
+                                        <label>&nbsp;</label>
+                                        <div class="alert info" style="margin:0">جریان قبلی (نگه‌داشتن/بازگردانی دستی از بخش «🔁 بازبینی») بدون تغییر کار می‌کند؛ این تنظیم فقط «تایید نهایی خودکار» را مدیریت می‌کند.</div>
+                                </div>
+                        </div>
                         <div class="actions-row">
                                 <button class="btn btn-primary" id="st-save">💾 ذخیره تنظیمات</button>
                         </div>
+                </div>
+
+                <div class="card">
+                        <h3>🧮 بروزآوری دیتابیس (۱.۲۱.۰)</h3>
+                        <p class="muted">فیلدهای فعال تعریف‌شده در سیستم با ستون‌های واقعی جدول دیتابیس مقایسه می‌شود. هر ستونی که دیگر به هیچ فیلد تعریف‌شده‌ای تعلق ندارد (مثل فیلدهای حذف‌شده وضعیت اینترنت/تلفن و وای‌فای‌ها) پیدا می‌شود، <b>محتوای همه سرویس‌هایش به‌صورت قالب‌بندی‌شده («🔹 عنوان: مقدار») به فیلد «توضیحات متفرقه» همان سرویس اضافه می‌شود</b> و در پایان، ستون به‌طور کامل از دیتابیس حذف می‌گردد. <b>پیش از اجرا یک پشتیبان کامل خودکار روی سرور گرفته می‌شود.</b></p>
+                        <div class="actions-row" style="display:flex;gap:8px;flex-wrap:wrap">
+                                <button class="btn btn-primary" id="dbupd-run">🧮 بروزآوری دیتابیس</button>
+                        </div>
+                        <div id="dbupd-result" style="margin-top:10px"></div>
                 </div>
 
                 <div class="card">
@@ -1715,7 +1832,9 @@ TPP.views = TPP.views || {};
                                 search_dedupe_seconds: document.getElementById('st-search-dedupe').value,
                                 /* ۱.۱۵.۰ — پشتیبان خودکار ایمپورت */
                                 import_auto_backup: document.getElementById('st-auto-backup').checked ? 1 : 0,
-                                auto_backup_keep: document.getElementById('st-auto-keep').value
+                                auto_backup_keep: document.getElementById('st-auto-keep').value,
+                                /* ۱.۲۱.۰ — تایید خودکار اقدامات نصاب‌ها */
+                                review_auto_days: document.getElementById('st-review-auto-days').value
                         };
                         try {
                                 const res = await TPP.api.request('PUT', 'settings', body);
@@ -1723,6 +1842,58 @@ TPP.views = TPP.views || {};
                                 // اعمال فوری تنظیمات جدید روی state اپ + کش آفلاین (بدون نیاز به رفرش)
                                 applySettings(res && res.settings ? res.settings : body);
                         } catch (e) { toast('خطا: ' + esc(e.message), 'error'); }
+                });
+
+                /* ---------- ۱.۲۱.۰ — بروزآوری دیتابیس ---------- */
+                document.getElementById('dbupd-run').addEventListener('click', async () => {
+                        const ok = await confirmBox(
+                                'بروزآوری دیتابیس اجرا شود؟<br>' +
+                                '<span class="muted">ستون‌های بدون فیلد فعال پیدا می‌شوند، محتوایشان به «توضیحات متفرقه» سرویس‌ها اضافه می‌شود و سپس ستون‌ها حذف می‌گردند.<br>پیش از اجرا <b>یک پشتیبان کامل خودکار</b> روی سرور گرفته می‌شود.</span>',
+                                'بروزآوری دیتابیس');
+                        if (!ok) return;
+                        const btn = document.getElementById('dbupd-run');
+                        const box = document.getElementById('dbupd-result');
+                        btn.disabled = true;
+                        box.innerHTML = '<div class="loading-block"><div class="spinner"></div><p class="muted">پشتیبان‌گیری و انتقال داده‌ها… ممکن است چند دقیقه طول بکشد.</p></div>';
+                        try {
+                                const res = await TPP.api.request('POST', 'tools/db-update');
+                                const sv = (res && res.services_table) || [];
+                                const ad = (res && res.addresses_table) || [];
+                                const orphanAfter = res && res.orphan_after ? res.orphan_after : {};
+                                const orphanCount = Object.keys(orphanAfter.service || {}).length + Object.keys(orphanAfter.address || {}).length;
+                                let html = '';
+                                if (!sv.length && !ad.length) {
+                                        html = '<div class="alert success">✅ ستون اضافه‌ای یافت نشد — دیتابیس هم‌اکنون با فیلدهای تعریف‌شده هماهنگ است.</div>';
+                                } else {
+                                        html = '<div class="alert success">✅ بروزآوری کامل شد — ' + (res.services_updated || 0).toLocaleString('fa-IR') + ' سرویس به‌روزرسانی و ' + (res.dropped || []).length + ' ستون حذف شد.</div>';
+                                        html += '<div class="table-wrap"><table class="tpp-table"><thead><tr><th>جدول</th><th>ستون حذف‌شده</th><th>عنوان فیلد</th><th class="num-cell">سرویس به‌روزشده</th></tr></thead><tbody>';
+                                        sv.forEach((c) => { html += '<tr><td>سرویس‌ها</td><td dir="ltr">' + esc(c.column) + '</td><td>' + esc(c.label) + '</td><td class="num-cell">' + (c.rows || 0).toLocaleString('fa-IR') + '</td></tr>'; });
+                                        ad.forEach((c) => { html += '<tr><td>آدرس‌ها</td><td dir="ltr">' + esc(c.column) + '</td><td>' + esc(c.label) + '</td><td class="num-cell">' + (c.rows || 0).toLocaleString('fa-IR') + '</td></tr>'; });
+                                        html += '</tbody></table></div>';
+                                }
+                                const bk = res && res.backup ? res.backup : null;
+                                if (bk && bk.filename) {
+                                        html += '<div class="alert warn">🛡 پشتیبان کامل پیش از اجرا: <code dir="ltr">' + esc(bk.filename) + '</code>' +
+                                                ' <button class="btn btn-sm" id="dbupd-restore">♻️ بازگردانی همین پشتیبان</button></div>';
+                                }
+                                if (orphanCount) {
+                                        html += '<div class="alert warn">⚠️ هنوز ستون‌های بدون فیلد فعال باقی مانده — دکمه را دوباره اجرا کنید یا فیلدها را از بخش «فیلدها» بررسی کنید.</div>';
+                                }
+                                box.innerHTML = html;
+                                const rb = document.getElementById('dbupd-restore');
+                                if (rb) rb.addEventListener('click', async () => {
+                                        if (!await confirmBox('همه داده‌ها به وضعیت قبل از بروزآوری بازگردانی شود؟ (ساختار ستون‌های حذف‌شده هم از پشتیبان بازمی‌گردد)', 'بازگردانی')) return;
+                                        rb.disabled = true;
+                                        try {
+                                                await TPP.api.request('POST', 'backup/stored/restore', { filename: bk.filename });
+                                                toast('بازگردانی کامل شد.', 'success');
+                                        } catch (e) { toast('خطا در بازگردانی: ' + esc(e.message), 'error', 8000); rb.disabled = false; }
+                                });
+                                toast('بروزآوری دیتابیس کامل شد.', 'success', 6000);
+                        } catch (e) {
+                                box.innerHTML = '<div class="alert err">خطا: ' + esc(e.message) + '</div>';
+                        }
+                        btn.disabled = false;
                 });
 
                 /* ---------- چیپ‌های درج جای‌نگهدار ---------- */

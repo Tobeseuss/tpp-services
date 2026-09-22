@@ -40,7 +40,10 @@ TPP.views = TPP.views || {};
                 userId: 0,        // 0 = خودم؛ برای مدیران: کاربرِ انتخاب‌شده
                 data: null,       // پاسخ workreport
                 cats: null,       // دسته‌بندی/تگ‌ها (برای فیلتر جستجوی سرویس)
-                actDaysCache: {}  // 'Y-m' → [iso, …] روزهای دارای فعالیت
+                actDaysCache: {}, // 'Y-m' → [iso, …] روزهای دارای فعالیت
+                repDaysCache: {}, // ۱.۲۱.۰ — 'Y-m' → {iso:count} روزهای دارای گزارش کار
+                repYm: '',        // ۱.۲۱.۰ — ماه نمایش تقویم گزارش کار ('jy-jm')
+                actYm: ''         // ۱.۲۱.۰ — ماه نمایش تقویم روزهای دارای فعالیت
         };
 
         const isManagerView = () => wr.userId > 0;
@@ -85,8 +88,11 @@ TPP.views = TPP.views || {};
         function isoAdd(iso, days) { return TPP.app.isoShift(iso, days); }
 
         /* ============================================================
-         * تقویم شمسی (۱.۱۹.۰) — گرید ماه + روزهای دارای گزارش (سبز) / فعالیت (نشان)
-         * $opts: {iso, reportDays:{iso:count}, activityDays:[iso], selected, onPick, compact}
+         * تقویم شمسی (۱.۱۹.۰ / ۱.۲۱.۰) — دو حالت مجزا بر اساس opts.kind:
+         *   kind='report'   → فقط روزهای دارای گزارش کار (سبز + تعداد اقلام)
+         *   kind='activity' → فقط روزهای دارای فعالیت ثبت‌شده (نقطه رنگی)
+         * (درخواست کاربر ۱.۲۱.۰: تقویم روزهای دارای فعالیت مجزا از تقویم روزهای دارای گزارش کار)
+         * $opts: {iso, kind, reportDays:{iso:count}, activityDays:[iso], selected, onPick, compact}
          * ============================================================ */
 
         const CAL_WEEKDAYS = ['ش', 'ی', 'د', 'س', 'چ', 'پ', 'ج'];
@@ -97,6 +103,7 @@ TPP.views = TPP.views || {};
                 const ym = jalYm(iso);
                 if (!ym) return '<div class="alert err">تاریخ نامعتبر است.</div>';
                 const today = TPP.app.tehranTodayIso();
+                const kind = ('activity' === opts.kind) ? 'activity' : 'report'; // ۱.۲۱.۰ — نوع هایلایت
                 const reportDays = opts.reportDays || {};
                 const actDays = opts.activityDays || [];
                 const firstIso = jmToIso(ym.jy, ym.jm, 1);
@@ -113,21 +120,35 @@ TPP.views = TPP.views || {};
                                         const dIso = jmToIso(ym.jy, ym.jm, day);
                                         const cls = ['cal-day'];
                                         if (dIso === today) cls.push('today');
-                                        if (reportDays[dIso]) cls.push('has-report');
-                                        if (actDays.indexOf(dIso) !== -1 && !reportDays[dIso]) cls.push('has-activity');
-                                        if (opts.selected && dIso === opts.selected) cls.push('selected');
-                                        const title = [];
-                                        if (reportDays[dIso]) title.push(faNum(reportDays[dIso]) + ' قلم گزارش');
-                                        if (actDays.indexOf(dIso) !== -1) title.push('فعالیت ثبت‌شده');
+                                        if (dIso === opts.selected) cls.push('selected');
+                                        let title = [];
+                                        let badge = '';
+                                        if ('report' === kind) {
+                                                // تقویم گزارش کار: فقط روزهای دارای گزارش سبز می‌شوند
+                                                if (reportDays[dIso]) {
+                                                        cls.push('has-report');
+                                                        title.push(faNum(reportDays[dIso]) + ' قلم گزارش کار');
+                                                        badge = ' <b class="cal-n">' + faNum(reportDays[dIso]) + '</b>';
+                                                }
+                                        } else {
+                                                // تقویم فعالیت: فقط روزهای دارای فعالیت نشان می‌گیرند
+                                                if (actDays.indexOf(dIso) !== -1) {
+                                                        cls.push('has-activity');
+                                                        title.push('فعالیت ثبت‌شده');
+                                                }
+                                        }
+                                        if (dIso === opts.selected) title.push('روز انتخاب‌شده');
                                         cells.push('<td class="' + cls.join(' ') + '"' + (title.length ? ' title="' + esc(title.join(' — ')) + '"' : '') +
-                                                (opts.onPick ? ' data-cal="' + esc(dIso) + '"' : '') + '>' + faNum(day) +
-                                                (reportDays[dIso] ? ' <b class="cal-n">' + faNum(reportDays[dIso]) + '</b>' : '') + '</td>');
+                                                (opts.onPick ? ' data-cal="' + esc(dIso) + '"' : '') + '>' + faNum(day) + badge + '</td>');
                                 }
                                 day++;
                         }
                         rows.push('<tr>' + cells.join('') + '</tr>');
                         if (day > len) break;
                 }
+                const legend = ('report' === kind)
+                        ? '<span><i class="cal-dot report"></i> روز دارای گزارش کار</span>'
+                        : '<span><i class="cal-dot activity"></i> روز دارای فعالیت</span>';
                 return `
                 <div class="wr-cal${opts.compact ? ' compact' : ''}" data-calmonth="${esc(ym.jy + '-' + ym.jm)}">
                         <div class="cal-head">
@@ -138,9 +159,8 @@ TPP.views = TPP.views || {};
                         <table class="cal-grid"><thead><tr>${CAL_WEEKDAYS.map((w) => `<th>${w}</th>`).join('')}</tr></thead>
                         <tbody>${rows.join('')}</tbody></table>
                         <div class="cal-legend">
-                                <span><i class="cal-dot report"></i> روز دارای گزارش</span>
-                                <span><i class="cal-dot activity"></i> روز دارای فعالیت</span>
-                                <span class="muted">— کلیک روی روز = انتخاب تاریخ</span>
+                                ${legend}
+                                <span class="muted">— کلیک روی روز = انتخاب</span>
                         </div>
                 </div>`;
         }
@@ -219,6 +239,7 @@ TPP.views = TPP.views || {};
 
                 document.getElementById('wr-today').addEventListener('click', () => {
                         wr.date = TPP.app.tehranTodayIso();
+                        wr.repYm = ymKeyOf(wr.date); wr.actYm = ymKeyOf(wr.date); // ۱.۲۱.۰ — تقویم‌ها به ماه امروز بیایند
                         if (wr.period !== 'day') { setPeriod(wr.period); return; }
                         syncDateText();
                         loadDay();
@@ -246,6 +267,8 @@ TPP.views = TPP.views || {};
                         userSel.addEventListener('change', () => {
                                 wr.userId = parseInt(userSel.value, 10) || 0;
                                 wr.actDaysCache = {};
+                                wr.repDaysCache = {}; // ۱.۲۱.۰ — کش روزهای گزارش کاربر جدید
+                                wr.repYm = ymKeyOf(wr.date); wr.actYm = ymKeyOf(wr.date);
                                 refresh();
                         });
                 }
@@ -337,53 +360,143 @@ TPP.views = TPP.views || {};
         }
 
         /* ============================================================
-         * تقویم اصلی (روزهای دارای گزارش سبز + روزهای دارای فعالیت)
+         * ۱.۲۱.۰ — دو تقویم مجزا (درخواست کاربر):
+         *   «گزارش کار» (روزهای دارای گزارش سبز — از workreport/days) و
+         *   «روزهای دارای فعالیت» (از activity/days) — هر کدام با ناوبری ماه مستقل.
+         * ۱.۲۰.۰ — رفع باگ انتخاب روز: bindCal قبلی رویکرد onPick نداشت و کلیک روز
+         *   بی‌صدا خطا می‌داد («نمی‌توان روز را انتخاب کرد») — اکنون onPick در هر دو تقویم متصل است.
          * ============================================================ */
 
-        function reportDaysMap() {
-                const map = {};
-                (wr.data && wr.data.days ? wr.data.days : []).forEach((d) => { map[d.date] = d.count; });
-                return map;
+        function ymKeyOf(iso) {
+                const ym = jalYm(iso);
+                return ym ? (ym.jy + '-' + ym.jm) : '';
+        }
+
+        /** انتخاب یک روز از هر کدام از تقویم‌ها → بارگذاری گزارش/فعالیت همان روز */
+        function pickCalendarDay(iso) {
+                if (!iso) return;
+                wr.date = iso;
+                if (wr.period === 'day') {
+                        wr.mode = 'day';
+                        loadDay();
+                } else {
+                        computeRange();
+                        loadRange();
+                }
+        }
+
+        /** ۱.۲۱.۰ — نقشه روزهای گزارش کار ماهِ یک تاریخ از کش (برای مودال افزودن دستی) */
+        function repDaysForMonth(iso) {
+                const key = (wr.userId || 0) + ':' + ymKeyOf(iso);
+                return wr.repDaysCache[key] || {};
+        }
+
+        /** ۱.۲۱.۰ — واکشی سبک روزهای گزارش کار ماه (اگر در کش نیست) + فراخوانی مجدد رندر */
+        function fetchReportDays_(ymKey, onDone) {
+                const owner = wr.userId || 0;
+                const key = owner + ':' + ymKey;
+                if (wr.repDaysCache[key]) { if (onDone) onDone(); return; }
+                const parts = String(ymKey).split('-').map((x) => parseInt(x, 10));
+                const jy = parts[0], jm = parts[1];
+                if (!jy || !jm) return;
+                const from = jmToIso(jy, jm, 1);
+                const to = jmToIso(jy, jm, jalMonthLen(jy, jm));
+                if (!from || !to) return;
+                TPP.api.request('GET', 'workreport/days', null, {
+                        from: from, to: to,
+                        user_id: isManagerView() ? wr.userId : 0
+                }).then((res) => {
+                        const map = {};
+                        (res.days || []).forEach((d) => { map[d.date] = d.count; });
+                        wr.repDaysCache[key] = map;
+                        if (onDone) onDone();
+                }).catch(() => { /* بدون هایلایت */ });
         }
 
         function renderCalendar() {
                 const box = document.getElementById('wr-cal-box');
                 if (!box) return;
-                const owner = wr.userId || (TPP.app.state().user ? TPP.app.state().user.id : 0);
-                const ym = jalYm(wr.date);
-                const monthKey = ym ? (ym.jy + '-' + ym.jm) : '';
-                const render = (actDays) => {
-                        box.innerHTML = calHtml({
-                                iso: wr.date,
-                                reportDays: reportDaysMap(),
-                                activityDays: actDays || [],
+                // ماه‌های نمایش تقویم‌ها — پیش‌فرض: ماه تاریخ انتخاب‌شده
+                if (!wr.repYm) wr.repYm = ymKeyOf(wr.date);
+                if (!wr.actYm) wr.actYm = ymKeyOf(wr.date);
+                box.innerHTML = '<div class="wr-cal-grid">' +
+                        '<div class="wr-cal-half" id="wr-cal-rep"><h4 class="cal-cap">📝 روزهای دارای گزارش کار</h4></div>' +
+                        '<div class="wr-cal-half" id="wr-cal-act"><h4 class="cal-cap">🕘 روزهای دارای فعالیت</h4></div>' +
+                        '</div>';
+                renderRepCal();
+                renderActCal();
+        }
+
+        /** تقویم گزارش کار — روزهای سبز از GET workreport/days (کش‌شده به تفکیک ماه/کاربر) */
+        function renderRepCal() {
+                const holder = document.getElementById('wr-cal-rep');
+                if (!holder) return;
+                const parts = wr.repYm.split('-').map((x) => parseInt(x, 10));
+                const jy = parts[0], jm = parts[1];
+                if (!jy || !jm) return;
+                const owner = wr.userId || 0;
+                const key = owner + ':' + wr.repYm;
+                const render = (map) => {
+                        holder.innerHTML = '<h4 class="cal-cap">📝 روزهای دارای گزارش کار</h4>' + calHtml({
+                                iso: jmToIso(jy, jm, 1),
+                                kind: 'report',
+                                reportDays: map,
                                 selected: wr.date,
-                                onPick: (iso) => {
-                                        wr.date = iso;
-                                        if (wr.mode === 'range') { computeRange(); loadRange(); }
-                                        else loadDay();
-                                        box.classList.add('hidden');
-                                }
+                                onPick: pickCalendarDay // ۱.۲۱.۰ — رفع باگ: اتصال انتخاب روز
                         });
-                        bindCal(box, {
-                                getIso: () => wr.date,
-                                onNav: (firstIso) => { wr.date = firstIso; renderCalendar(); }
+                        bindCal(holder, {
+                                getIso: () => jmToIso(jy, jm, 1),
+                                onNav: (firstIso) => { wr.repYm = ymKeyOf(firstIso) || wr.repYm; renderRepCal(); }
                         });
                 };
-                const cached = wr.actDaysCache[monthKey];
-                if (cached) { render(cached); return; }
+                if (wr.repDaysCache[key]) { render(wr.repDaysCache[key]); return; }
+                render({});
+                const from = jmToIso(jy, jm, 1);
+                const to = jmToIso(jy, jm, jalMonthLen(jy, jm));
+                if (!from || !to) return;
+                TPP.api.request('GET', 'workreport/days', null, {
+                        from: from, to: to,
+                        user_id: isManagerView() ? wr.userId : 0
+                }).then((res) => {
+                        const map = {};
+                        (res.days || []).forEach((d) => { map[d.date] = d.count; });
+                        wr.repDaysCache[key] = map;
+                        render(map);
+                }).catch(() => { /* تقویم بدون هایلایت گزارش */ });
+        }
+
+        /** تقویم فعالیت — روزهای دارای فعالیت از GET activity/days (کش‌شده به تفکیک ماه/کاربر) */
+        function renderActCal() {
+                const holder = document.getElementById('wr-cal-act');
+                if (!holder) return;
+                const parts = wr.actYm.split('-').map((x) => parseInt(x, 10));
+                const jy = parts[0], jm = parts[1];
+                if (!jy || !jm) return;
+                const key = (wr.userId || 0) + ':' + wr.actYm;
+                const render = (days) => {
+                        holder.innerHTML = '<h4 class="cal-cap">🕘 روزهای دارای فعالیت</h4>' + calHtml({
+                                iso: jmToIso(jy, jm, 1),
+                                kind: 'activity',
+                                activityDays: days || [],
+                                selected: wr.date,
+                                onPick: pickCalendarDay // ۱.۲۱.۰ — رفع باگ: اتصال انتخاب روز
+                        });
+                        bindCal(holder, {
+                                getIso: () => jmToIso(jy, jm, 1),
+                                onNav: (firstIso) => { wr.actYm = ymKeyOf(firstIso) || wr.actYm; renderActCal(); }
+                        });
+                };
+                if (wr.actDaysCache[key]) { render(wr.actDaysCache[key]); return; }
                 render([]);
-                // واکشی روزهای فعالیت ماه نمایش‌داده‌شده
-                const from = ym ? jmToIso(ym.jy, ym.jm, 1) : wr.date;
-                const to = ym ? jmToIso(ym.jy, ym.jm, jalMonthLen(ym.jy, ym.jm)) : wr.date;
+                const from = jmToIso(jy, jm, 1);
+                const to = jmToIso(jy, jm, jalMonthLen(jy, jm));
                 if (!from || !to) return;
                 TPP.api.request('GET', 'activity/days', null, {
                         from: from, to: to,
                         user_id: isManagerView() ? wr.userId : 0
                 }).then((res) => {
-                        wr.actDaysCache[monthKey] = res.days || [];
-                        const ymNow = jalYm(wr.date);
-                        if (ymNow && (ymNow.jy + '-' + ymNow.jm) === monthKey) render(res.days || []);
+                        wr.actDaysCache[key] = res.days || [];
+                        render(res.days || []);
                 }).catch(() => { /* تقویم بدون هایلایت فعالیت */ });
         }
 
@@ -748,7 +861,7 @@ TPP.views = TPP.views || {};
                         preview.innerHTML = '<div class="chip ok">سرویس انتخاب‌شده: ' + esc(svcLine(picked)) + '</div>';
                 };
 
-                /* ---- تقویم انتخاب تاریخ: روزهای دارای فعالیت هایلایت + اخطار نگهداشت ---- */
+                /* ---- تقویم انتخاب تاریخ (۱.۲۱.۰): روزهای دارای گزارش کار سبز (منبع: کش/سرور) ---- */
                 const renderMiniCal = () => {
                         const r = wr.data && wr.data.retention;
                         const warn = r && !r.unlimited
@@ -756,14 +869,10 @@ TPP.views = TPP.views || {};
                                 : '';
                         calBox.innerHTML = warn + calHtml({
                                 iso: wr.date,
-                                reportDays: reportDaysMap(),
-                                activityDays: (wr.data && wr.data.activity_days) || [],
+                                kind: 'report',
+                                reportDays: repDaysForMonth(wr.date),
                                 selected: wr.date,
-                                compact: true
-                        });
-                        bindCal(calBox, {
-                                getIso: () => wr.date,
-                                onNav: () => renderMiniCal(),
+                                compact: true,
                                 onPick: (iso) => {
                                         wr.date = iso;
                                         dateInput.value = jal(wr.date);
@@ -771,11 +880,16 @@ TPP.views = TPP.views || {};
                                         el.querySelector('.modal-head h3').textContent = '➕ افزودن دستی به گزارش کار — ' + jal(wr.date);
                                 }
                         });
+                        bindCal(calBox, {
+                                getIso: () => wr.date,
+                                onNav: (firstIso) => { wr.date = firstIso; renderMiniCal(); }
+                        });
                 };
                 el.querySelector('#wr-m-cal').addEventListener('click', () => {
                         if (!calBox.classList.contains('hidden')) { calBox.classList.add('hidden'); return; }
                         renderMiniCal();
                         calBox.classList.remove('hidden');
+                        fetchReportDays_(ymKeyOf(wr.date), renderMiniCal); // هایلایت سبز ماه جاری
                 });
 
                 /* ---- فهرست اقدامات → پرکردن/ویرایش متن ---- */

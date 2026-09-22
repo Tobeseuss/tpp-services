@@ -45,6 +45,8 @@ final class TPP_Plugin {
                 // ۱.۱۰.۰ — گزارش فعالیت: پاک‌سازی دوره‌ای (کرون روزانه + بازبینی ساعتی سبک در بوت)
                 add_action( 'tpp_daily_cleanup', array( 'TPP_Activity', 'cron_cleanup' ) );
                 add_action( 'init', array( 'TPP_Activity', 'maybe_cleanup' ), 99 );
+                // ۱.۲۱.۰ — تایید خودکار اقدامات نصاب‌ها پس از n روز (تنظیمات؛ استثنا: دسته بازبینی)
+                add_action( 'tpp_daily_cleanup', array( 'TPP_Review', 'auto_approve_expired' ) );
 
                 do_action( 'tpp_booted', $this );
         }

@@ -444,4 +444,38 @@ class TPP_Workreport {
                         TPP_DB::query( self::table_sql() );
                 }
         }
+
+        /**
+         * ۱.۲۱.۰ — روزهای دارای گزارش کار در بازه (برای تقویم مجزای «گزارش کار»).
+         * خروجی سبک: [{date, count}] — برخلاف GET workreport فقط شمارش، بدون اقلام.
+         */
+        public static function report_days( $user_id, $from, $to ) {
+                $table = TPP_DB::table( 'work_reports' );
+                if ( ! $table ) {
+                        return array();
+                }
+                $user_id = (int) $user_id;
+                $from    = self::norm_date( $from );
+                $to      = self::norm_date( $to );
+                if ( '' === $from || '' === $to ) {
+                        return array();
+                }
+                if ( strcmp( $from, $to ) > 0 ) {
+                        $tmp = $from;
+                        $from = $to;
+                        $to = $tmp;
+                }
+                $where  = ' WHERE report_date >= %s AND report_date <= %s';
+                $params = array( $from, $to );
+                if ( $user_id > 0 ) {
+                        $where   .= ' AND user_id = %d';
+                        $params[] = $user_id;
+                }
+                $rows = TPP_DB::get_results( "SELECT report_date, COUNT(*) AS n FROM {$table}{$where} GROUP BY report_date ORDER BY report_date ASC LIMIT 400", $params );
+                $out = array();
+                foreach ( (array) $rows as $r ) {
+                        $out[] = array( 'date' => (string) $r['report_date'], 'count' => (int) $r['n'] );
+                }
+                return $out;
+        }
 }

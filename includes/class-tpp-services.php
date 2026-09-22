@@ -227,6 +227,15 @@ class TPP_Services {
                 if ( is_wp_error( $cat_data ) ) {
                         return $cat_data;
                 }
+                // ۱.۲۱.۰ — پیش‌فرض سمت سرور: اگر دسته‌بندی ارسال نشده و دسته‌بندی تعریف شده است،
+                // سرویس جدید با دسته «ثبت جهت بازبینی و ویرایش یا تأیید مدیریت» ثبت می‌شود
+                // (همان پیش‌فرضی که در فرم اپ هم انتخاب است).
+                if ( ! isset( $cat_data['category_id'] ) && TPP_Categories::any_category_defined() ) {
+                        $review_cat = TPP_Categories::review_category_id();
+                        if ( $review_cat > 0 ) {
+                                $cat_data['category_id'] = $review_cat;
+                        }
+                }
                 if ( ! $skip_required && TPP_Categories::any_category_defined() ) {
                         $cat_id = isset( $cat_data['category_id'] ) ? (int) $cat_data['category_id'] : 0;
                         if ( $cat_id <= 0 ) {

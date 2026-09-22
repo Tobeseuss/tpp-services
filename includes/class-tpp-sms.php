@@ -425,7 +425,7 @@ class TPP_SMS {
                         ),
                         array(
                                 'title' => 'ارسال مشخصات به کاربر',
-                                'body'  => "{{f_owner_name}} عزیز\nمشخصات سرویس شما:\nآدرس: {{f_full_address}}\nشماره تلفن: {{f_phone}}\nوضعیت اینترنت: {{f_internet_status}}\nوضعیت تلفن: {{f_phone_status}}",
+                                'body'  => "{{f_owner_name}} عزیز\nمشخصات سرویس شما:\nآدرس: {{f_full_address}}\nشماره تلفن: {{f_phone}}\nتوضیحات: {{f_description}}", // ۱.۲۱.۰ — جای‌نگهدار فیلدهای حذف‌شده برداشته شد
                         ),
                 );
                 foreach ( $rows as $r ) {

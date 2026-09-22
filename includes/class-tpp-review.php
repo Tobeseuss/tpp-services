@@ -350,7 +350,7 @@ class TPP_Review {
                                 'source'      => (string) $r['source'],
                                 'summary'     => (string) ( $r['summary'] ?? '' ),
                                 'status'      => (string) $r['status'],
-                                'reviewed_by' => (int) $r['reviewed_by'] > 0 ? self::user_name( (int) $r['reviewed_by'] ) : '',
+                                'reviewed_by' => (int) $r['reviewed_by'] > 0 ? self::user_name( (int) $r['reviewed_by'] ) : ( ( 'kept' === (string) $r['status'] && ! empty( $r['reviewed_at'] ) ) ? 'تایید خودکار سیستم' : '' ),
                                 'reviewed_at' => (string) ( $r['reviewed_at'] ?? '' ),
                                 'created_at'  => (string) $r['created_at'],
                         );
@@ -621,5 +621,55 @@ class TPP_Review {
                         }
                 }
                 return $total;
+        }
+
+        /* ---------------------------------------------------------------------
+         * ۱.۲۱.۰ — تایید خودکار اقدامات نصاب‌ها پس از n روز (تنظیمات)
+         * ------------------------------------------------------------------- */
+
+        /**
+         * تغییرات pending قدیمی‌تر از «review_auto_days» روز به‌صورت خودکار «تایید نهایی» (kept) می‌شوند.
+         *  • سرویس‌هایی که دسته‌بندی‌شان همان دسته پیش‌فرض «ثبت جهت بازبینی…» است مستثنا هستند
+         *    (تا زمانی که بازبین تکلیف‌شان را روشن نکرده، در صف می‌مانند — درخواست کاربر)
+         *  • ۰ در تنظیمات = تایید خودکار غیرفعال
+         * اجرا: کرون روزانه tpp_daily_cleanup (هوک در TPP_Plugin::boot) + شمارش خروجی برای لاگ.
+         */
+        public static function auto_approve_expired() {
+                $table = TPP_DB::table( 'installer_changes' );
+                if ( ! $table || ! self::table_ready() ) {
+                        return 0;
+                }
+                $days = (int) tpp()->settings()->get( 'review_auto_days', 7 );
+                if ( $days <= 0 ) {
+                        return 0; // غیرفعال
+                }
+                $cutoff = gmdate( 'Y-m-d H:i:s', TPP_Date::ts() - $days * DAY_IN_SECONDS );
+                $st     = TPP_DB::table( 'services' );
+                $review_cat = TPP_Categories::review_category_id();
+
+                // تغییرات pending قدیمی + دسته فعلی سرویس‌شان (برای استثنا)
+                $rows = TPP_DB::get_results(
+                        "SELECT c.id, c.service_id, s.category_id AS cur_cat
+                         FROM {$table} c
+                         LEFT JOIN {$st} s ON s.id = c.service_id
+                         WHERE c.status = 'pending' AND c.created_at < %s
+                         ORDER BY c.id ASC LIMIT 5000",
+                        array( $cutoff )
+                );
+
+                $approved = 0;
+                foreach ( (array) $rows as $r ) {
+                        // استثنا: سرویس موجود با دسته بازبینی → تا بازبینی دستی در صف می‌ماند
+                        if ( $review_cat > 0 && (int) ( $r['cur_cat'] ?? 0 ) === $review_cat ) {
+                                continue;
+                        }
+                        TPP_DB::update( 'installer_changes', array(
+                                'status'      => 'kept',
+                                'reviewed_by' => 0, // ۰ = تایید خودکار سیستم
+                                'reviewed_at' => TPP_Date::now(),
+                        ), array( 'id' => (int) $r['id'] ) );
+                        $approved++;
+                }
+                return $approved;
         }
 }

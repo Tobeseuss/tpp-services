@@ -37,6 +37,9 @@ class TPP_Settings {
                         /* ۱.۱۵.۰ — پشتیبان خودکار قبل از ایمپورت گروهی (ذخیره روی سرور) */
                         'import_auto_backup'   => 1,           // پشتیبان کامل خودکار قبل از هر ثبت گروهی
                         'auto_backup_keep'     => 10,          // تعداد نسخه‌های نگهداری‌شده روی سرور (۰ = نامحدود)
+                        /* ۱.۲۱.۰ — تایید خودکار اقدامات نصاب‌ها پس از n روز (۰ = غیرفعال)؛
+                         * سرویس‌های با دسته «ثبت جهت بازبینی…» از آن مستثنا هستند */
+                        'review_auto_days'     => 7,
                 );
         }
 
@@ -120,6 +123,10 @@ class TPP_Settings {
                 }
                 if ( isset( $in['auto_backup_keep'] ) ) {
                         $out['auto_backup_keep'] = min( 100, max( 0, (int) $in['auto_backup_keep'] ) );
+                }
+                /* ۱.۲۱.۰ — تایید خودکار اقدامات نصاب‌ها (۰ = غیرفعال) */
+                if ( isset( $in['review_auto_days'] ) ) {
+                        $out['review_auto_days'] = min( 3650, max( 0, (int) $in['review_auto_days'] ) );
                 }
                 if ( array_key_exists( 'sms_api_key', $in ) ) {
                         $out['sms_api_key'] = trim( sanitize_text_field( (string) $in['sms_api_key'] ) );

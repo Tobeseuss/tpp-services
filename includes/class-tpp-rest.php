@@ -244,6 +244,14 @@ class TPP_Rest {
                                 'to'      => array( 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ),
                                 'user_id' => array( 'type' => 'integer', 'default' => 0 ),
                         ) ) ),
+                        /* --- ۱.۲۱.۰ — روزهای دارای گزارش کار (تقویم مجزای گزارش کار) --- */
+                        'workreport/days'          => array( 'GET' => array( 'perm' => 'perm_access', 'cb' => 'workreport_days', 'args' => array(
+                                'from'    => array( 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ),
+                                'to'      => array( 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ),
+                                'user_id' => array( 'type' => 'integer', 'default' => 0 ),
+                        ) ) ),
+                        /* --- ۱.۲۱.۰ — بروزآوری دیتابیس: انتقال ستون‌های یتیم به «توضیحات متفرقه» + حذف --- */
+                        'tools/db-update'          => array( 'POST' => array( 'perm' => 'perm_settings', 'cb' => 'tools_db_update' ) ),
 
                         /* --- ۱.۱۹.۰ — دسته‌بندی پروژه‌ها و تگ‌های سیستمی --- */
                         'categories'               => array(
@@ -847,11 +855,40 @@ class TPP_Rest {
                 ) );
         }
 
+        /**
+         * ۱.۲۱.۰ — روزهای دارای گزارش کار (برای تقویم مجزای گزارش کار).
+         * خروجی سبک: فقط تاریخ + تعداد اقلام — بدون اقلام.
+         */
+        public function workreport_days( WP_REST_Request $request ) {
+                $user_id = get_current_user_id();
+                $owner   = (int) $request->get_param( 'user_id' );
+                if ( $owner > 0 && $owner !== $user_id ) {
+                        if ( ! TPP_Capabilities::user_can( $user_id, 'tpp_view_activity' ) ) {
+                                return self::err( 'tpp_forbidden', 'مشاهده گزارش سایر کاربران فقط برای مدیران ممکن است.', 403 );
+                        }
+                } else {
+                        $owner = $user_id;
+                }
+                $from = trim( (string) $request->get_param( 'from' ) );
+                $to   = trim( (string) $request->get_param( 'to' ) );
+                if ( '' === $from || '' === $to ) {
+                        return self::err( 'tpp_bad_range', 'بازه from و to (YYYY-MM-DD) الزامی است.', 400 );
+                }
+                return self::ok( array(
+                        'from'    => $from,
+                        'to'      => $to,
+                        'user_id' => $owner,
+                        'days'    => TPP_Workreport::report_days( $owner, $from, $to ),
+                ) );
+        }
+
         /* -------------------- هندلرها: دسته‌بندی پروژه‌ها (۱.۱۹.۰) --------------------
          * خواندن برای همه کاربران افزونه (فرم سرویس/فیلترها)؛ ایجاد/ویرایش/حذف فقط دارندگان
          * قابلیت tpp_manage_categories (پیش‌فرض: فقط مدیر کل سایت). */
 
-        /** GET categories — {categories:[{id,label,sort,usage}], tags:[…]} */
+        /** GET categories — بدون پارامتر: {categories:[…], tags:[…]} (شکل قدیمی کامل)
+         *  ۱.۲۱.۰ — با kind (+q/page/per_page): {items:[…], total, page, per_page} برای
+         *  کامبوباکس آجاکسی فرم سرویس و فهرست صفحه‌بندی‌شده «دسته‌بندی پروژه‌ها» */
         public function categories_list( WP_REST_Request $request ) {
                 $shape = static function ( $c ) {
                         return array(
@@ -862,9 +899,35 @@ class TPP_Rest {
                                 'is_review' => ! empty( $c['is_review'] ), // 1.20.0 — دسته ارجاع پیش‌فرض
                         );
                 };
+
+                /* شکل قدیمی — همه تعریف‌ها (فرم/فیلترها/کش آفلاین) */
+                $kind = sanitize_key( (string) $request->get_param( 'kind' ) );
+                if ( ! in_array( $kind, array( 'category', 'tag' ), true ) ) {
+                        return self::ok( array(
+                                'categories' => array_map( $shape, TPP_Categories::categories() ),
+                                'tags'       => array_map( $shape, TPP_Categories::tags() ),
+                        ) );
+                }
+
+                /* ۱.۲۱.۰ — جستجو + صفحه‌بندی */
+                $q       = trim( (string) $request->get_param( 'q' ) );
+                $page    = max( 1, (int) $request->get_param( 'page' ) );
+                $per     = min( 100, max( 5, (int) $request->get_param( 'per_page' ) ) );
+                $q_norm  = TPP_Date::en_num( $q );
+                $all     = array_map( $shape, ( 'tag' === $kind ) ? TPP_Categories::tags() : TPP_Categories::categories() );
+                if ( '' !== $q ) {
+                        $all = array_values( array_filter( $all, static function ( $c ) use ( $q_norm ) {
+                                return false !== mb_stripos( TPP_Date::en_num( (string) $c['label'] ), $q_norm );
+                        } ) );
+                }
+                $total = count( $all );
+                $items = array_slice( $all, ( $page - 1 ) * $per, $per );
                 return self::ok( array(
-                        'categories' => array_map( $shape, TPP_Categories::categories() ),
-                        'tags'       => array_map( $shape, TPP_Categories::tags() ),
+                        'kind'     => $kind,
+                        'items'    => $items,
+                        'total'    => $total,
+                        'page'     => $page,
+                        'per_page' => $per,
                 ) );
         }
 
@@ -1467,6 +1530,9 @@ class TPP_Rest {
                         'progress_status'     => sanitize_key( (string) $request->get_param( 'progress_status' ) ),
                         'progress_step'       => sanitize_key( (string) $request->get_param( 'progress_step' ) ),
                         'progress_step_state' => sanitize_key( (string) $request->get_param( 'progress_step_state' ) ),
+                        // ۱.۲۱.۰ رفع باگ «خروجی همیشه کل سرویس‌ها»: فیلتر دسته/تگ هم مثل صفحه جستجو اعمال شود
+                        'category' => (string) $request->get_param( 'category' ),
+                        'tags'     => (string) $request->get_param( 'tags' ),
                 );
         }
 
@@ -1739,6 +1805,27 @@ class TPP_Rest {
                 return self::ok( $meta, 201 );
         }
 
+        /** ۱.۲۱.۰ — بروزآوری دیتابیس: پشتیبان خودکار + انتقال ستون‌های یتیم به «توضیحات متفرقه» + حذف ستون‌ها */
+        public function tools_db_update( WP_REST_Request $request ) {
+                try {
+                        // پشتیبان کامل خودکار پیش از هر تغییر ساختاری — مثل جریان اصلاح اعداد
+                        $backup = TPP_Backup::create( 'pre_db_update', get_current_user_id() );
+                } catch ( Throwable $e ) {
+                        return self::err( 'tpp_backup_error', 'پشتیبان‌گیری خودکار ناموفق بود: ' . $e->getMessage(), 500 );
+                }
+                if ( is_wp_error( $backup ) ) {
+                        return self::err( $backup->get_error_code(), 'پشتیبان‌گیری خودکار ناموفق بود: ' . $backup->get_error_message(), 500 );
+                }
+                try {
+                        $report = TPP_Fields::db_update_run( get_current_user_id() );
+                } catch ( Throwable $e ) {
+                        return self::err( 'tpp_db_update_error', 'خطا در بروزآوری دیتابیس: ' . $e->getMessage(), 500 );
+                }
+                $report['backup'] = $backup;
+                $report['orphan_after'] = TPP_Fields::orphan_columns();
+                return self::ok( $report );
+        }
+
         /** ۱.۱۸.۰ — اصلاح اعداد فارسی/عربی به انگلیسی در همه فیلدها (با پشتیبان خودکار پیش از اجرا) */
         public function numbers_fix( WP_REST_Request $request ) {
                 $dry_run = ! empty( $request->get_param( 'dry_run' ) );
@@ -1954,6 +2041,8 @@ class TPP_Rest {
                         /* ۱.۱۵.۰ — پشتیبان خودکار ایمپورت */
                         'import_auto_backup' => (int) $s->get( 'import_auto_backup', 1 ),
                         'auto_backup_keep'   => (int) $s->get( 'auto_backup_keep', 10 ),
+                        /* ۱.۲۱.۰ — تایید خودکار اقدامات نصاب‌ها (۰ = غیرفعال) */
+                        'review_auto_days'   => (int) $s->get( 'review_auto_days', 7 ),
                 ) );
         }
 
@@ -2199,7 +2288,7 @@ class TPP_Rest {
                                         $arg( 'progress.failures', 'array', '۱.۱۴.۰ — آرایه خرابی‌ها: ["los","internet","phone","other"] — آرایه خالی = رفع همه خرابی‌ها' ),
                                         $arg( 'progress.failure', 'string', 'legacy — los | phone | internet | other | خالی (رفع خرابی)' ),
                                 ), array( 'progress' => array( 'steps' => array( 'infra', 'fat', 'drop' ), 'skipped' => array(), 'failures' => array( 'internet', 'other' ) ) ) ),
-                                $ep( 'POST', 'services/bulk', 'تغییر گروهی/تکی پیشرفت و وضعیت', 'اعمال یک‌باره پیشرفت دایری + خرابی + فیلدهای سرویس روی فهرستی از سرویس‌ها (ids). mode: up_to = تنظیم تا مرحله (آبشاری — همه مراحل قبل خودکار تیک می‌خورند)، add/remove = افزودن/حذف مراحل خاص، clear = پاک‌کردن، خالی = فقط خرابی/فیلد. skipped_policy: keep (مراحل ردشده توسط کاربر حفظ شوند — پیش‌فرض) / reset (بدون استثنا). ۱.۱۴.۰ — failures: آرایه خرابی‌ها (null = بدون تغییر؛ آرایه خالی = رفع همه)؛ failure تکی قدیمی هم پذیرفته می‌شود. service: {slug: value} فیلدهای سرویس (مثل f_internet_status). هر تغییر در تاریخچه و گزارش فعالیت با علامت «تغییر گروهی» ثبت می‌شود؛ dry_run = محاسبه بدون ذخیره. دسترسی: قابلیت «ویرایش سریع» — به‌طور پیش‌فرض فقط مدیر کل سایت؛ برای نقش‌ها از «نقش‌ها و دسترسی‌ها» قابل اعطاست.', 'ویرایش سریع (⚡/🚀) — فقط مدیر کل به‌طور پیش‌فرض', array(
+                                $ep( 'POST', 'services/bulk', 'تغییر گروهی/تکی پیشرفت و وضعیت', 'اعمال یک‌باره پیشرفت دایری + خرابی + فیلدهای سرویس روی فهرستی از سرویس‌ها (ids). mode: up_to = تنظیم تا مرحله (آبشاری — همه مراحل قبل خودکار تیک می‌خورند)، add/remove = افزودن/حذف مراحل خاص، clear = پاک‌کردن، خالی = فقط خرابی/فیلد. skipped_policy: keep (مراحل ردشده توسط کاربر حفظ شوند — پیش‌فرض) / reset (بدون استثنا). ۱.۱۴.۰ — failures: آرایه خرابی‌ها (null = بدون تغییر؛ آرایه خالی = رفع همه)؛ failure تکی قدیمی هم پذیرفته می‌شود. service: {slug: value} فیلدهای سرویس (مثل f_mobile یا f_misc_notes). هر تغییر در تاریخچه و گزارش فعالیت با علامت «تغییر گروهی» ثبت می‌شود؛ dry_run = محاسبه بدون ذخیره. دسترسی: قابلیت «ویرایش سریع» — به‌طور پیش‌فرض فقط مدیر کل سایت؛ برای نقش‌ها از «نقش‌ها و دسترسی‌ها» قابل اعطاست.', 'ویرایش سریع (⚡/🚀) — فقط مدیر کل به‌طور پیش‌فرض', array(
                                         $arg( 'ids', 'array', 'شناسه سرویس‌ها (حداکثر ۵۰۰۰)' ),
                                         $arg( 'progress.mode', 'string', 'up_to | add | remove | clear | خالی' ),
                                         $arg( 'progress.step', 'string', 'کلید مرحله برای up_to یا all = همه ۱۶ مرحله' ),
@@ -2207,9 +2296,9 @@ class TPP_Rest {
                                         $arg( 'progress.skipped_policy', 'string', 'keep (پیش‌فرض) | reset' ),
                                         $arg( 'progress.failures', 'array', '۱.۱۴.۰ — آرایه خرابی‌ها؛ null=بدون تغییر | [] = رفع همه | ["los","other"]' ),
                                         $arg( 'progress.failure', 'string', 'legacy — null=بدون تغییر | خالی=رفع | los|phone|internet|other' ),
-                                        $arg( 'service', 'object', 'فیلدهای سرویس مثل {"f_internet_status": "فعال"}' ),
+                                        $arg( 'service', 'object', 'فیلدهای سرویس مثل {"f_mobile": "۰۹۱۲…", "f_misc_notes": "…"}' ),
                                         $arg( 'dry_run', 'bool', 'true = فقط پیش‌نمایش بدون ذخیره' ),
-                                ), array( 'ids' => array( 12, 45, 78 ), 'progress' => array( 'mode' => 'up_to', 'step' => 'inet_connected', 'skipped_policy' => 'keep', 'failures' => array( 'internet' ) ), 'service' => array( 'f_internet_status' => 'فعال' ) ) ),
+                                ), array( 'ids' => array( 12, 45, 78 ), 'progress' => array( 'mode' => 'up_to', 'step' => 'inet_connected', 'skipped_policy' => 'keep', 'failures' => array( 'internet' ) ), 'service' => array( 'f_misc_notes' => 'یادداشت گروهی' ) ) ),
                         ) ),
 
                         array( 'title' => 'بررسی موارد تکراری (مدیر کل)', 'items' => array(
@@ -2267,12 +2356,13 @@ class TPP_Rest {
                                         $arg( 'service_id', 'int', 'شناسه سرویس' ),
                                         $arg( 'prefix', 'string', 'عنوان اقدام' ),
                                 ), array( 'service_id' => 12, 'prefix' => 'تحویل سرویس' ) ),
+                                $ep( 'GET', 'workreport/days', 'روزهای دارای گزارش کار (۱.۲۱.۰)', '?from&to[&user_id] — فقط تاریخ + تعداد اقلام گزارش هر روز (بدون اقلام) — منبع تقویم مجزای «روزهای دارای گزارش کار» در گزارش کار.', 'کاربر افزونه', array( $arg( 'from / to', 'date', 'بازه YYYY-MM-DD' ) ) ),
                                 $ep( 'PUT', 'workreport/{id}', 'ویرایش قلم', 'ویرایش متن/سرویس یک قلم — فقط مالک قلم.', 'کاربر افزونه', array(), array( 'content' => 'متن جدید' ) ),
                                 $ep( 'DELETE', 'workreport/{id}', 'حذف قلم', 'حذف قلم از گزارش روز — فقط مالک قلم.', 'کاربر افزونه' ),
                         ) ),
 
                         array( 'title' => 'دسته‌بندی پروژه‌ها و تگ‌ها (۱.۱۹.۰)', 'items' => array(
-                                $ep( 'GET', 'categories', 'فهرست دسته‌بندی‌ها و تگ‌ها', 'همه دسته‌بندی‌ها و تگ‌های سیستمی + تعداد استفاده — برای فرم ثبت/ویرایش سرویس و فیلترهای جستجو.', 'کاربر افزونه' ),
+                                $ep( 'GET', 'categories', 'فهرست دسته‌بندی‌ها و تگ‌ها', 'بدون پارامتر: همه دسته‌بندی‌ها و تگ‌های سیستمی + تعداد استفاده — برای فرم ثبت/ویرایش سرویس و فیلترهای جستجو. ۱.۲۱.۰ — با kind=category|tag (+q جستجو + page + per_page): {items, total, page, per_page} برای کامبوباکس آجاکسی فرم سرویس و فهرست صفحه‌بندی‌شده «دسته‌بندی پروژه‌ها».', 'کاربر افزونه', array( $arg( 'kind', 'string', 'بدون پارامتر = شکل کامل قدیمی | category | tag' ), $arg( 'q', 'string', 'جستجوی بخشی از عنوان' ), $arg( 'page / per_page', 'int', 'صفحه‌بندی (per_page حداکثر ۱۰۰)' ) ) ),
                                 $ep( 'POST', 'categories', 'افزودن', '{kind: category|tag, label} — دسته/تگ جدید.', 'دسته‌بندی پروژه‌ها (پیش‌فرض فقط مدیر کل)', array(), array( 'kind' => 'category', 'label' => 'پروژه سازمانی' ) ),
                                 $ep( 'PUT', 'categories/{id}', 'ویرایش', '{label, sort_order}.', 'دسته‌بندی پروژه‌ها' ),
                                 $ep( 'DELETE', 'categories/{id}', 'حذف', 'دسته در حال استفاده حذف نمی‌شود؛ تگ از سرویس‌ها جدا و حذف می‌شود.', 'دسته‌بندی پروژه‌ها' ),
@@ -2289,6 +2379,7 @@ class TPP_Rest {
                                 ) ),
                                 $ep( 'POST', 'review/keep', 'نگه‌داشتن تغییر', '{id} — علامت «بازبینی شد/نگه داشته شد»؛ تغییر باقی می‌ماند (پیش‌فرض همه تغییرات می‌مانند).', 'بازبینی اقدامات نصاب‌ها', array(), array( 'id' => 101 ) ),
                                 $ep( 'POST', 'review/revert', 'بازگردانی به حالت قبل', '{id} — وضعیت دقیق قبل از تغییر بازمی‌گردد: ثبت → سرویس حذف می‌شود؛ ویرایش → ستون‌های سرویس/آدرس عیناً بازنویسی؛ حذف → سرویس با همان شناسه بازساز. اگر سرویس بعد از تغییر دوباره ویرایش شده باشد بازگردانی انجام نمی‌شود (محافظ تغییرات جدیدتر).', 'بازبینی اقدامات نصاب‌ها', array(), array( 'id' => 101 ) ),
+                                $ep( 'POST', 'tools/db-update', 'بروزآوری دیتابیس (۱.۲۱.۰)', 'ستون‌های یتیم (بدون فیلد فعال) هر دو جدول services/addresses پیدا می‌شود، محتوایشان قالب‌بندی‌شده («🔹 عنوان: مقدار») به فیلد «توضیحات متفرقه» سرویس‌ها منتقل و ستون‌ها کامل حذف می‌شود. پیش از اجرا پشتیبان کامل خودکار روی سرور گرفته می‌شود (پاسخ شامل متادیتای پشتیبان و ستون‌های باقی‌مانده).', 'تنظیمات (مدیر کل)' ),
                         ) ),
 
                         array( 'title' => 'ایمپورت اکسل (۳ مرحله‌ای)', 'items' => array(

@@ -579,9 +579,15 @@ TPP.views = TPP.views || {};
                         try { cats = await TPP.api.request('GET', 'categories'); TPP.app.state().cats = cats; } catch (e) { /* فرم بدون دسته رندر می‌شود */ }
                 }
                 const hasCats = !!(cats && cats.categories && cats.categories.length);
+                const allCatList = (cats && cats.categories ? cats.categories : []);
+                const reviewCat = allCatList.find((c) => c.is_review) || null; // ۱.۲۱.۰ — دسته پیش‌فرض بازبینی
                 const curCat = row && row.category ? parseInt(row.category.id, 10) || 0 : 0;
+                const defaultCatId = curCat || (reviewCat ? reviewCat.id : 0); // ۱.۲۱.۰ — پیش‌انتخاب دسته بازبینی در ثبت/ویرایش
+                const defaultCatLabel = curCat ? ((row.category && row.category.label) || '') : (reviewCat ? reviewCat.label : '');
                 const curTags = (row && Array.isArray(row.tags) ? row.tags : []).map((t) => parseInt(t.id, 10) || 0);
                 const catEditable = can(editing ? 'tpp_edit_services' : 'tpp_create_services');
+                /* ۱.۲۱.۰ — دسته/تگ با کامبوباکس آجاکسی (مثل فیلترهای صفحه سرویس‌ها):
+                 * با تایپ بخشی از عنوان، از دیتابیس جستجو و نتایج در لیست کشویی نمایش داده می‌شود. */
                 const catCard = `
                 <div class="card">
                         <h3>🏷 دسته‌بندی پروژه ${hasCats ? '<span class="req">*</span>' : ''}</h3>
@@ -589,19 +595,24 @@ TPP.views = TPP.views || {};
                                 <div class="field">
                                         <label>دسته‌بندی ${hasCats ? '<span class="req">*</span>' : ''}</label>
                                         ${catEditable ? `
-                                        <select id="svc-category" class="btn">
-                                                <option value="">— انتخاب دسته‌بندی —</option>
-                                                ${(cats && cats.categories ? cats.categories : []).map((c) => `<option value="${esc(String(c.id))}"${c.id === curCat ? ' selected' : ''}>${esc(c.label)}${c.is_review ? ' ⏳' : ''} (${faNum(c.usage)})</option>`).join('')}
-                                        </select>` : (curCat ? `<div class="alert info">${esc((row.category && row.category.label) || '')}</div>` : '<span class="muted">—</span>')}
-                                        <div class="hint">${hasCats ? 'فیلد اجباری — از فهرست دسته‌بندی‌های تعریف‌شده (بخش «دسته‌بندی پروژه‌ها») انتخاب کنید. اگر دسته مناسب پیدا نکردید گزینه «⏳ ثبت جهت بازبینی…» را انتخاب کنید تا سرویس به بازبینان ارجاع شود.' : 'هنوز دسته‌بندی‌ای تعریف نشده — مدیر کل می‌تواند از بخش «دسته‌بندی پروژه‌ها» دسته و تگ تعریف کند.'}</div>
+                                        <div class="tpp-combo" id="svc-cat-combo">
+                                                <input type="text" class="combo-input" id="svc-category-input" placeholder="${hasCats ? 'تایپ کنید تا از فهرست جستجو شود…' : '—'}" autocomplete="off" role="combobox" aria-expanded="false">
+                                                <button type="button" class="combo-clear hidden" id="svc-category-clear" tabindex="-1" title="حذف انتخاب">✕</button>
+                                                <div class="combo-list hidden" role="listbox"></div>
+                                        </div>
+                                        <input type="hidden" id="svc-category" value="${esc(String(defaultCatId || ''))}">
+                                        <div id="svc-cat-selected" class="tag-chips" style="margin-top:6px"></div>` : (curCat ? `<div class="alert info">${esc((row.category && row.category.label) || '')}</div>` : '<span class="muted">—</span>')}
+                                        <div class="hint">${hasCats ? 'فیلد اجباری — بخشی از عنوان دسته را تایپ کنید و از لیست بازشو انتخاب کنید؛ گزینه پیش‌فرض «⏳ ثبت جهت بازبینی…» است (اگر دسته مناسب پیدا نکردید همین را بگذارید تا سرویس به بازبینان ارجاع شود).' : 'هنوز دسته‌بندی‌ای تعریف نشده — مدیر کل می‌تواند از بخش «دسته‌بندی پروژه‌ها» دسته و تگ تعریف کند.'}</div>
                                 </div>
                                 <div class="field">
                                         <label>تگ‌ها (چندتایی — اختیاری)</label>
                                         ${catEditable ? `
-                                        <div class="tag-chips" id="svc-tags">
-                                                ${(cats && cats.tags ? cats.tags : []).map((t) => `
-                                                <label class="chip tag-chip${curTags.indexOf(t.id) !== -1 ? ' on' : ''}"><input type="checkbox" value="${esc(String(t.id))}"${curTags.indexOf(t.id) !== -1 ? ' checked' : ''}> ${esc(t.label)}</label>`).join('') || '<span class="muted">تگی تعریف نشده است.</span>'}
-                                        </div>` : `<div class="tag-chips">${curTags.length ? curTags.map((id) => { const t = (cats && cats.tags ? cats.tags : []).find((x) => x.id === id); return t ? `<span class="chip tag-chip on">${esc(t.label)}</span>` : ''; }).join('') : '<span class="muted">—</span>'}</div>`}
+                                        <div class="tpp-combo" id="svc-tags-combo">
+                                                <input type="text" class="combo-input" id="svc-tags-input" placeholder="تایپ کنید تا تگ‌ها جستجو شوند…" autocomplete="off" role="combobox" aria-expanded="false">
+                                                <div class="combo-list hidden" role="listbox"></div>
+                                        </div>
+                                        <input type="hidden" id="svc-tags-ids" value='${esc(JSON.stringify(curTags))}'>
+                                        <div class="tag-chips" id="svc-tags" style="margin-top:6px"></div>` : `<div class="tag-chips">${curTags.length ? curTags.map((id) => { const t = (cats && cats.tags ? cats.tags : []).find((x) => x.id === id); return t ? `<span class="chip tag-chip on">${esc(t.label)}</span>` : ''; }).join('') : '<span class="muted">—</span>'}</div>`}
                                 </div>
                         </div>
                 </div>`;
@@ -690,6 +701,8 @@ TPP.views = TPP.views || {};
                 bindModeControls();
                 bindAutoGrow();
                 bindPassToggles();
+                // ۱.۲۱.۰ — کامبوباکس آجاکسی دسته‌بندی/تگ + پیش‌فرض دسته بازبینی
+                bindCatTagCombos(cats, defaultCatId, defaultCatLabel);
                 // ۱.۱۲.۰ — کارت پیشرفت دایری (نوار + تیک مراحل + خرابی‌ها)
                 const progRefresh = bindProgress();
                 // ۱.۱۰.۰ — پیش‌نویس خودکار: بازیابی/ذخیره همزمان با تایپ در حافظه دستگاه
@@ -743,6 +756,138 @@ TPP.views = TPP.views || {};
         };
 
         /* ==================== پیامک + کپی مشخصات ==================== */
+
+        /**
+         * ۱.۲۱.۰ — کامبوباکس آجاکسی دسته‌بندی/تگ در فرم سرویس (درخواست کاربر — مثل فیلترهای صفحه سرویس‌ها):
+         * با تایپ بخشی از عنوان، از دیتابیس جستجو می‌شود (آفلاین: فهرست کش‌شده) و در لیست بازشو انتخاب می‌شود.
+         * دسته = تک‌انتخابی (پیش‌فرض: دسته بازبینی)؛ تگ = چندانتخابی با چیپ‌های قابل حذف.
+         */
+        function bindCatTagCombos(cats, defaultCatId, defaultCatLabel) {
+                const catInput = document.getElementById('svc-category-input');
+                const catHidden = document.getElementById('svc-category');
+                const catClear = document.getElementById('svc-category-clear');
+                const catChipBox = document.getElementById('svc-cat-selected');
+                const catList = document.querySelector('#svc-cat-combo .combo-list');
+                const tagInput = document.getElementById('svc-tags-input');
+                const tagHidden = document.getElementById('svc-tags-ids');
+                const tagList = document.querySelector('#svc-tags-combo .combo-list');
+                const tagsChips = document.getElementById('svc-tags');
+                if (!catInput || !catHidden) return;
+
+                const allTags = (cats && cats.tags ? cats.tags : []);
+                const norm = (s) => String(s == null ? '' : s).trim();
+
+                /* جستجو: آنلاین → سرور (GET categories?kind&q)؛ آفلاین/خطا → فهرست کش‌شده state */
+                const searchKind = async (kind, q) => {
+                        if (TPP.offline.state().online) {
+                                try {
+                                        const params = { kind: kind, per_page: 30 };
+                                        if (q) params.q = q;
+                                        const res = await TPP.api.request('GET', 'categories', null, params);
+                                        return (res && res.items) || [];
+                                } catch (e) { /* ادامه با کش محلی */ }
+                        }
+                        const src = (kind === 'tag') ? allTags : ((cats && cats.categories ? cats.categories : []));
+                        const qn = norm(q);
+                        return src.filter((c) => !qn || norm(c.label).indexOf(qn) !== -1).slice(0, 30);
+                };
+
+                /* ---- دسته‌بندی (تک‌انتخابی) ---- */
+                const renderCatChip = (id, label) => {
+                        catHidden.value = id ? String(id) : '';
+                        if (catClear) catClear.classList.toggle('hidden', !id);
+                        if (catChipBox) catChipBox.innerHTML = id ? '<span class="chip tag-chip on">' + esc(label || ('#' + id)) + '</span>' : '';
+                };
+                renderCatChip(defaultCatId || 0, defaultCatLabel); // ۱.۲۱.۰ — پیش‌انتخاب دسته بازبینی
+
+                tppComboList(catInput, catList, async (q) => searchKind('category', q), (item) => {
+                        renderCatChip(item.id, item.label);
+                        catInput.value = '';
+                });
+                if (catClear) catClear.addEventListener('click', () => {
+                        renderCatChip(0, '');
+                        catInput.focus();
+                });
+
+                /* ---- تگ‌ها (چندانتخابی) ---- */
+                if (tagInput && tagHidden && tagList) {
+                        let picked = []; // [{id,label}]
+                        try {
+                                const initIds = JSON.parse(tagHidden.value || '[]').map((x) => parseInt(x, 10) || 0).filter(Boolean);
+                                picked = initIds.map((id) => {
+                                        const t = allTags.find((x) => x.id === id);
+                                        return { id: id, label: t ? t.label : ('#' + id) };
+                                });
+                        } catch (e) { picked = []; }
+
+                        const syncHidden = () => { tagHidden.value = JSON.stringify(picked.map((p) => p.id)); };
+                        const renderChips = () => {
+                                if (!tagsChips) return;
+                                tagsChips.innerHTML = picked.length ? picked.map((p, i) =>
+                                        '<span class="chip tag-chip on">' + esc(p.label) + ' <button type="button" class="combo-clear" data-ti="' + i + '" title="حذف تگ">✕</button></span>').join('')
+                                        : '<span class="muted">تگی انتخاب نشده — اختیاری است.</span>';
+                                tagsChips.querySelectorAll('[data-ti]').forEach((b) => b.addEventListener('click', (e) => {
+                                        e.preventDefault();
+                                        picked.splice(parseInt(b.getAttribute('data-ti'), 10), 1);
+                                        syncHidden();
+                                        renderChips();
+                                }));
+                        };
+                        renderChips();
+
+                        tppComboList(tagInput, tagList, async (q) => {
+                                const rows = await searchKind('tag', q);
+                                const have = {}; picked.forEach((p) => { have[p.id] = true; });
+                                return rows.filter((r) => !have[r.id]); // انتخاب‌شده‌ها از لیست حذف شوند
+                        }, (item) => {
+                                picked.push({ id: item.id, label: item.label });
+                                syncHidden();
+                                renderChips();
+                                tagInput.value = '';
+                        });
+                }
+        }
+
+        /**
+         * ۱.۲۱.۰ — موتور لیست بازشوی آجاکسی (پایه کامبوباکس‌های فرم):
+         * debounce ۳۰۰ms + cancel پاسخ قدیمی با seq + بستن با blur/Escape + mousedown برای ثبت انتخاب.
+         */
+        function tppComboList(input, list, searchFn, onPick) {
+                if (!input || !list) return;
+                let seq = 0, timer = null;
+                const hide = () => list.classList.add('hidden');
+                const render = (items) => {
+                        if (!items.length) {
+                                list.innerHTML = '<div class="combo-empty">موردی یافت نشد.</div>';
+                                return;
+                        }
+                        list.innerHTML = items.map((it) =>
+                                '<div class="combo-item" role="option" data-id="' + esc(String(it.id)) + '" data-label="' + esc(it.label) + '">' + esc(it.label) + (it.is_review ? ' ⏳' : '') + ' <span class="muted">(' + faNum(it.usage || 0) + ')</span></div>'
+                        ).join('');
+                        list.querySelectorAll('.combo-item').forEach((el) => el.addEventListener('mousedown', (e) => {
+                                e.preventDefault(); // پیش از blur — تا انتخاب ثبت شود
+                                onPick({ id: parseInt(el.getAttribute('data-id'), 10) || 0, label: el.getAttribute('data-label') || '' });
+                                hide();
+                        }));
+                };
+                const run = async () => {
+                        const s = ++seq;
+                        const q = input.value.trim();
+                        try {
+                                const rows = await searchFn(q);
+                                if (s !== seq) return; // پاسخ قدیمی
+                                render(rows || []);
+                        } catch (e) { if (s === seq) render([]); }
+                };
+                input.addEventListener('focus', () => { run(); list.classList.remove('hidden'); });
+                input.addEventListener('input', () => {
+                        list.classList.remove('hidden');
+                        if (timer) clearTimeout(timer);
+                        timer = setTimeout(run, 300);
+                });
+                input.addEventListener('blur', () => setTimeout(hide, 200));
+                input.addEventListener('keydown', (e) => { if (e.key === 'Escape') hide(); });
+        }
 
         /** کپی متن — نسخه مشترک از TPP.app (با fallback مرورگرهای قدیمی) */
         async function copyText(text) {
@@ -1230,16 +1375,24 @@ TPP.views = TPP.views || {};
                         serviceData[slug] = (sel.value === 'manual') ? String(serviceData[slug] || '').trim() : MODE_AUTO_VALUE;
                 });
 
-                /* ۱.۱۹.۰ — دسته‌بندی/تگ‌ها: اعتبارسنجی اجباری + جمع‌آوری */
+                /* ۱.۱۹.۰ — دسته‌بندی/تگ‌ها: اعتبارسنجی اجباری + جمع‌آوری
+                 * ۱.۲۱.۰ — دسته از hidden input کامبوباکس آجاکسی خوانده می‌شود (پیش‌فرض: دسته بازبینی) */
                 const catSel = document.getElementById('svc-category');
                 const catId = catSel ? (parseInt(faToEn(String(catSel.value || '')), 10) || 0) : (curCatId(row));
-                const tagsBox = document.getElementById('svc-tags');
-                const tagIds = tagsBox ? Array.from(tagsBox.querySelectorAll('input:checked')).map((i) => parseInt(faToEn(String(i.value)), 10) || 0).filter(Boolean) : (curTagIds(row));
+                const tagsIdsEl = document.getElementById('svc-tags-ids');
+                let tagIds = curTagIds(row);
+                if (tagsIdsEl) {
+                        try {
+                                tagIds = JSON.parse(tagsIdsEl.value || '[]').map((x) => parseInt(x, 10) || 0).filter(Boolean);
+                        } catch (e) { tagIds = curTagIds(row); }
+                }
                 if (catSel && hasCatsNow() && catId <= 0) {
                         toast('فیلد الزامی «دسته‌بندی پروژه» خالی است — از فهرست انتخاب کنید.', 'error', 7000);
-                        catSel.classList.add('invalid');
-                        catSel.focus();
-                        catSel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        const comboInput = document.getElementById('svc-category-input');
+                        const focusEl = comboInput || catSel;
+                        focusEl.classList.add('invalid');
+                        focusEl.focus();
+                        focusEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
                         return;
                 }
 
