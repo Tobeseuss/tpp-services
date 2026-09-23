@@ -1320,6 +1320,23 @@ html.tpp-embed .login-screen { min-height: 60vh; }
 .wr-act-addr { font-size: 12.5px; color: var(--muted, #9aa7b8); margin-top: 3px; line-height: 1.8; }
 .wr-act-row .wr-act-add { align-self: flex-start; margin-top: 6px; }
 
+/* کارت گروهی سرویس در فید «فعالیت‌های این روز» (۱.۲۲.۰ — هر سرویس فقط یک‌بار) */
+.wr-svc-card { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; background: color-mix(in srgb, var(--bg) 55%, transparent); display: flex; flex-direction: column; gap: 8px; }
+.wr-svc-head { display: flex; flex-direction: column; gap: 4px; }
+.wr-svc-id { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.wr-svc-acts { display: flex; flex-direction: column; gap: 4px; border-top: 1px dashed var(--border); padding-top: 8px; }
+.wr-svc-act { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+.wr-act-detail { flex: 1 1 200px; min-width: 140px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wr-act-time { white-space: nowrap; font-size: 12px; }
+.wr-svc-foot { display: flex; align-items: center; gap: 10px; border-top: 1px dashed var(--border); padding-top: 8px; }
+.wr-svc-foot .muted { font-size: 12px; }
+[data-theme="light"] .wr-svc-card { background: #f7f9fd; }
+@media (max-width: 640px) {
+        .wr-act-detail { white-space: normal; flex-basis: 100%; order: 3; }
+        .wr-svc-foot { flex-wrap: wrap; }
+        .wr-svc-foot .btn { flex: 1 1 auto; }
+}
+
 /* چیپ‌های دسته/تگ (فرم + فیلترها + مودال گزارش کار) */
 .tag-chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; min-height: 34px; }
 .chip.tag-chip { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; user-select: none; font-size: 12px; }

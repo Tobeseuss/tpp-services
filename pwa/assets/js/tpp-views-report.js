@@ -716,8 +716,19 @@ TPP.views = TPP.views || {};
         }
 
         /* ============================================================
-         * فعالیت‌های روز (۱.۱۹.۰): فید سرور بدون جستجوها + آدرس کامل سرویس
+         * فعالیت‌های روز (۱.۱۹.۰) — از ۱.۲۲.۰: گروه‌بندی بر اساس سرویس
+         * هر سرویس فقط یک‌بار با کارت اختصاصی نمایش داده می‌شود و
+         * اقدامات انجام‌شده روی آن داخل کارت خودش فهرست می‌شود
+         * (درخواست کاربر ۱.۲۲.۰ — حذف ردیف‌های تکراری یک سرویس)
          * ============================================================ */
+
+        const FEED_ICONS = { change: '📝', view: '👁', sms: '📨' };
+        const FEED_ACTS = { create: 'ایجاد', update: 'ویرایش', delete: 'حذف', merge: 'ادغام', restore: 'بازگردانی', view: 'بازدید', sms: 'پیامک' };
+
+        /** جزئیات اقدام بدون پیشوند تکراری «سرویس #N — » (شناسه سرویس در سربرگ کارت هست) */
+        function actDetail(r) {
+                return esc(String(r.title || '').replace(/^سرویس\s*#\d+\s*—\s*/, '') || '—');
+        }
 
         function renderFeed() {
                 const card = document.getElementById('wr-activity-card');
@@ -727,53 +738,113 @@ TPP.views = TPP.views || {};
                 const rows = feed.rows || [];
                 const total = feed.total || 0;
                 const self = !wr.userId;
+
+                // گروه‌بندی ردیف‌ها بر اساس سرویس — هر سرویس فقط یک کارت؛ ردیف‌های بدون سرویس جدا نمایش داده می‌شوند
+                const groups = [];
+                const gmap = {};
+                const loose = [];
+                rows.forEach((r) => {
+                        const sid = r.svc && parseInt(r.svc.id, 10) ? parseInt(r.svc.id, 10) : 0;
+                        if (!sid) { loose.push(r); return; }
+                        if (!gmap[sid]) { gmap[sid] = { sid: sid, svc: r.svc, rows: [] }; groups.push(gmap[sid]); }
+                        gmap[sid].rows.push(r);
+                });
+
+                const older = total > rows.length ? '<p class="muted" style="text-align:center">' + faNum(total - rows.length) + ' فعالیت قدیمی‌تر این روز نمایش داده نشد — با افزودن دستی هم می‌توانید ثبت کنید.</p>' : '';
+                const body = (groups.length || loose.length)
+                        ? (groups.length ? '<div class="wr-acts">' + groups.map(svcCardHtml).join('') + '</div>' : '') +
+                                (loose.length ? '<div class="wr-acts"' + (groups.length ? ' style="margin-top:8px"' : '') + '>' + loose.map(looseRowHtml).join('') + '</div>' : '') + older
+                        : '<div class="empty-state" style="padding:14px"><p class="muted">در این روز فعالیتی ثبت نشده است.</p></div>';
                 card.innerHTML = `
                 <div class="card">
                         <h3>🕘 فعالیت‌های این روز ${self ? '' : '(' + esc(wr.data.user_name || '') + ')'}</h3>
-                        <p class="muted">تغییر / بازدید / ایجاد و پیامک‌های همین روز (جستجوها نمایش داده نمی‌شوند) — با دکمه «➕» هر ردیف به گزارش کار اضافه می‌شود (ایجاد → «تحویل سرویس»، سایر → «رفع مشکل»).</p>
-                        ${rows.length ? '<div class="wr-acts">' + rows.map(feedRowHtml).join('') + '</div>' +
-                                (total > rows.length ? '<p class="muted" style="text-align:center">' + faNum(total - rows.length) + ' فعالیت قدیمی‌تر این روز نمایش داده نشد — با افزودن دستی هم می‌توانید ثبت کنید.</p>' : '') :
-                                '<div class="empty-state" style="padding:14px"><p class="muted">در این روز فعالیتی ثبت نشده است.</p></div>'}
+                        <p class="muted">تغییر / بازدید / ایجاد و پیامک‌های همین روز (جستجوها نمایش داده نمی‌شوند) — هر سرویس فقط یک‌بار با کارت اختصاصی نمایش داده می‌شود و اقداماتش داخل کارتش فهرست است؛ دکمه «➕» خط استاندارد همان سرویس را به گزارش کار اضافه می‌کند (ایجاد → «تحویل سرویس»، سایر → «رفع مشکل»).</p>
+                        ${body}
                 </div>`;
 
-                card.querySelectorAll('[data-wr-add]').forEach((b) => b.addEventListener('click', () => {
-                        addFromActivity(parseInt(b.getAttribute('data-wr-add'), 10), b.getAttribute('data-wr-src'));
+                card.querySelectorAll('[data-wr-svc]').forEach((b) => b.addEventListener('click', () => {
+                        go('service/' + b.getAttribute('data-wr-svc'));
+                }));
+                card.querySelectorAll('[data-wr-addg]').forEach((b) => b.addEventListener('click', () => {
+                        const g = gmap[parseInt(b.getAttribute('data-wr-addg'), 10)];
+                        if (g) addServiceToReport(g);
                 }));
         }
 
-        /** ردیف فید — آدرس کامل سرویس + بلوک/پلاک/واحد (درخواست کاربر ۱.۱۹.۰) */
-        function feedRowHtml(r) {
-                const ICONS = { change: '📝', view: '👁', sms: '📨' };
-                const ACT = { create: 'ایجاد', update: 'ویرایش', delete: 'حذف', merge: 'ادغام', restore: 'بازگردانی', view: 'بازدید', sms: 'پیامک' };
-                const canAdd = (r.src === 'change' || r.src === 'view');
-                const svc = r.svc || null;
-                const addrParts = svc ? [svc.full_address, svc.block, svc.plate ? 'پلاک ' + svc.plate : '', svc.unit ? 'واحد ' + svc.unit : ''].filter(Boolean) : [];
-                const addrLine = svc ? ('<div class="wr-act-addr">' + (addrParts.length ? esc(addrParts.join('، ')) : 'بدون آدرس') + (svc.virtual_number ? ' — شماره مجازی: ' + esc(svc.virtual_number) : '') + '</div>') : '';
+        /** کارت یک سرویس: سربرگ (شناسه + آدرس کامل) + فهرست اقدامات روز + یک دکمه افزودن */
+        function svcCardHtml(g) {
+                const svc = g.svc || {};
+                const addrParts = [svc.full_address, svc.block, svc.plate ? 'پلاک ' + svc.plate : '', svc.unit ? 'واحد ' + svc.unit : ''].filter(Boolean);
+                const addrLine = (addrParts.length ? esc(addrParts.join('، ')) : 'بدون آدرس') + (svc.virtual_number ? ' — شماره مجازی: ' + esc(svc.virtual_number) : '');
+                const addable = g.rows.filter((r) => r.src === 'change' || r.src === 'view');
+                const canAdd = addable.length > 0 && canEdit();
                 return `
-                <div class="wr-act-row">
-                        <div class="wr-act-main">
-                                <span class="chip">${ICONS[r.src] || '•'} ${esc(ACT[r.action] || r.action)}</span>
-                                <span class="wr-act-title">${esc(r.title || '—')}</span>
-                                <span class="muted" style="white-space:nowrap">${fmtDate(r.ts)}</span>
+                <div class="wr-svc-card">
+                        <div class="wr-svc-head">
+                                <div class="wr-svc-id">
+                                        <span class="chip">🛰️ سرویس #${faNum(g.sid)}</span>
+                                        <button class="btn btn-sm" data-wr-svc="${esc(String(g.sid))}" title="بازکردن صفحه سرویس">مشاهده سرویس</button>
+                                </div>
+                                <div class="wr-act-addr">${addrLine}</div>
                         </div>
-                        ${addrLine}
-                        ${canAdd && canEdit() ? '<button class="btn btn-sm btn-primary wr-act-add" data-wr-add="' + esc(String(r.id)) + '" data-wr-src="' + esc(r.src) + '" title="افزودن همین اقدام به گزارش کار">➕ افزودن به گزارش کار</button>' : ''}
+                        <div class="wr-svc-acts">${g.rows.map(actLineHtml).join('')}</div>
+                        ${canAdd ? '<div class="wr-svc-foot"><button class="btn btn-sm btn-primary wr-act-add" data-wr-addg="' + esc(String(g.sid)) + '" title="افزودن خط استاندارد این سرویس به گزارش کار (ایجاد → تحویل سرویس، سایر → رفع مشکل)">➕ افزودن به گزارش کار</button><span class="muted">' + faNum(addable.length) + ' اقدام قابل ثبت</span></div>' : ''}
                 </div>`;
         }
 
-        /** افزودن ردیف فعالیت به گزارش کار (ساخت خط در سرور) */
-        async function addFromActivity(rowId, src) {
+        /** یک خط اقدام داخل کارت سرویس */
+        function actLineHtml(r) {
+                return `
+                <div class="wr-svc-act">
+                        <span class="chip">${FEED_ICONS[r.src] || '•'} ${esc(FEED_ACTS[r.action] || r.action)}</span>
+                        <span class="wr-act-detail">${actDetail(r)}</span>
+                        <span class="muted wr-act-time">${fmtDate(r.ts)}</span>
+                </div>`;
+        }
+
+        /** ردیف بدون سرویس (سرویس حذف‌شده یا پیامک بی‌سرویس) — فقط نمایشی، بدون دکمه افزودن */
+        function looseRowHtml(r) {
+                return `
+                <div class="wr-act-row">
+                        <div class="wr-act-main">
+                                <span class="chip">${FEED_ICONS[r.src] || '•'} ${esc(FEED_ACTS[r.action] || r.action)}</span>
+                                <span class="wr-act-title">${esc(r.title || '—')}</span>
+                                <span class="muted" style="white-space:nowrap">${fmtDate(r.ts)}</span>
+                        </div>
+                </div>`;
+        }
+
+        /**
+         * افزودن فعالیت‌های یک سرویس به گزارش کار — هر «نوع خط» فقط یک‌بار:
+         * جدیدترین ردیف «ایجاد» → خط «تحویل سرویس» + جدیدترین ردیف دیگر (بازدید/ویرایش/…) → خط «رفع مشکل».
+         * (خطوط در سرور از وضعیت فعلی سرویس ساخته می‌شوند؛ افزودن تک‌تک ردیف‌ها خط تکراری می‌ساخت)
+         */
+        async function addServiceToReport(g) {
                 if (!canEdit()) { toast('این گزارش متعلق به شما نیست.', 'warn'); return; }
-                try {
-                        const res = await TPP.api.request('POST', 'workreport/from_activity', {
-                                src: src === 'view' ? 'view' : 'change',
-                                row_id: rowId,
-                                date: wr.date
-                        });
-                        toast('✅ به گزارش کار ' + esc(jal(wr.date)) + ' اضافه شد.', 'success', 5000);
+                const addable = g.rows.filter((r) => r.src === 'change' || r.src === 'view');
+                if (!addable.length) return;
+                const isCreate = (r) => r.src === 'change' && r.action === 'create';
+                const reps = [];
+                const created = addable.find(isCreate);          // ردیف‌ها بر اساس زمان نزولی‌اند → اولین = جدیدترین
+                const other = addable.find((r) => !isCreate(r));
+                if (created) reps.push(created);
+                if (other) reps.push(other);
+                let ok = 0, lastErr = '';
+                for (const r of reps) {
+                        try {
+                                await TPP.api.request('POST', 'workreport/from_activity', {
+                                        src: r.src === 'view' ? 'view' : 'change',
+                                        row_id: r.id,
+                                        date: wr.date
+                                });
+                                ok++;
+                        } catch (e) { lastErr = e.message; }
+                }
+                if (ok) {
+                        toast(ok > 1 ? '✅ ' + faNum(ok) + ' قلم به گزارش کار ' + esc(jal(wr.date)) + ' اضافه شد.' : '✅ به گزارش کار ' + esc(jal(wr.date)) + ' اضافه شد.', 'success', 5000);
                         loadDay();
-                } catch (e) {
-                        toast('خطا در افزودن: ' + esc(e.message), 'error', 7000);
+                } else {
+                        toast('خطا در افزودن: ' + esc(lastErr || 'نامشخص'), 'error', 7000);
                 }
         }
 
