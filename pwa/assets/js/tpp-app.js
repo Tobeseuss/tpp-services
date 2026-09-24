@@ -9,7 +9,7 @@ window.TPP = window.TPP || {};
 
 /** نسخه این کد — با نسخه‌ای که سرور در bootstrap می‌فرستد مقایسه می‌شود؛
  *  اگر فرق کنند یعنی پوسته قدیمی در مرورگر مانده و باید تازه شود. */
-TPP.VERSION = '1.22.0';
+TPP.VERSION = '1.23.0';
 
 /* ==================== ۱.۱۳.۰ — منطق آبشاری مراحل دایری (معادل سرور) ====================
    مراحل وابسته‌اند: تیک مرحله N همه مراحل قبل از N را خودکار تیک می‌زند؛
@@ -577,6 +577,18 @@ TPP.app = (function () {
                 });
 
                 window.addEventListener('hashchange', route);
+                // ۱.۲۳.۰ — فیچر آزمایشی: میانبر Ctrl+S / ⌘S → ذخیره فرم سرویس (فقط وقتی صفحه سرویس باز است)
+                // e.code = KeyS مستقل از چیدمان کیبورد است (با کیبورد فارسی e.key = «س» می‌شود)
+                document.addEventListener('keydown', (e) => {
+                        const k = String(e.key || '').toLowerCase();
+                        if (!(e.ctrlKey || e.metaKey) || (k !== 's' && e.code !== 'KeyS')) return;
+                        const form = document.getElementById('service-form');
+                        const btn = document.getElementById('save-btn');
+                        if (!form || !btn) return; // صفحه سرویس باز نیست یا کاربر اجازه ذخیره ندارد (دکمه ذخیره رندر نشده)
+                        if (document.querySelector('.modal-backdrop')) return; // مودال باز است — ذخیره فرم انجام نشود
+                        e.preventDefault(); // جلوگیری از دیالوگ «ذخیره صفحه» مرورگر
+                        btn.click(); // همان جریان دکمه ذخیره اصلی (اعتبارسنجی + saveService)
+                });
                 TPP.offline.on('change', updateNetStatus);
                 TPP.offline.on('sync', onSyncEvent);
                 TPP.offline.init();

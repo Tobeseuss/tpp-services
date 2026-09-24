@@ -1337,6 +1337,10 @@ html.tpp-embed .login-screen { min-height: 60vh; }
         .wr-svc-foot .btn { flex: 1 1 auto; }
 }
 
+/* ۱.۲۳.۰ — ردیف دکمه ذخیره در پایین هر بخش فرم سرویس (فیچر آزمایشی) */
+.sec-save-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; border-top: 1px dashed var(--border); margin-top: 12px; padding-top: 10px; }
+.sec-save-row .muted { font-size: 12px; }
+
 /* چیپ‌های دسته/تگ (فرم + فیلترها + مودال گزارش کار) */
 .tag-chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; min-height: 34px; }
 .chip.tag-chip { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; user-select: none; font-size: 12px; }

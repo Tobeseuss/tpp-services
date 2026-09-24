@@ -145,6 +145,13 @@ TPP.views = TPP.views || {};
         }
 
         /** HTML کارت پیشرفت دایری — بالای اطلاعات اصلی (canEdit=false → فقط-مشاهده) */
+        /** ۱.۲۳.۰ — فیچر آزمایشی: ردیف دکمه ذخیره در پایین هر بخش فرم سرویس.
+         *  دکمه type="submit" داخل فرم است → همان جریان ذخیره کامل (saveService + اعتبارسنجی) اجرا می‌شود؛
+         *  هدف: کاربر برای ذخیره مجبور به اسکرول تا انتهای صفحه نباشد. بازگشت: حذف فراخوانی‌های secSaveHtml. */
+        function secSaveHtml() {
+                return '<div class="sec-save-row"><button type="submit" class="btn btn-primary btn-sm" title="ذخیره کل فرم سرویس (همان دکمه ذخیره پایین صفحه)">💾 ذخیره اطلاعات</button><span class="muted">ذخیره کل فرم — بدون نیاز به اسکرول تا انتهای صفحه</span></div>';
+        }
+
         function progressCardHtml(row, canEdit, descField) {
                 const { steps, failures } = progressCatalog();
                 const p = (row && row.progress) || {};
@@ -190,6 +197,7 @@ TPP.views = TPP.views || {};
                                 ${descHtml}
                                 <div class="hint">«سایر» انتخاب شود، شرح خرابی در همین بخش «توضیحات» نوشته می‌شود.</div>
                         </div>
+                        ${canEdit ? secSaveHtml() : ''}
                 </div>`;
         }
 
@@ -619,6 +627,7 @@ TPP.views = TPP.views || {};
                                         <div class="tag-chips" id="svc-tags" style="margin-top:6px"></div>` : `<div class="tag-chips">${curTags.length ? curTags.map((id) => { const t = (cats && cats.tags ? cats.tags : []).find((x) => x.id === id); return t ? `<span class="chip tag-chip on">${esc(t.label)}</span>` : ''; }).join('') : '<span class="muted">—</span>'}</div>`}
                                 </div>
                         </div>
+                        ${catEditable ? secSaveHtml() : ''}
                 </div>`;
 
                 const addressLocked = !!(address && address.id);
@@ -642,6 +651,8 @@ TPP.views = TPP.views || {};
                 }
 
                 document.getElementById('page-title').textContent = editing ? 'سرویس #' + (row && row.id) : 'ثبت سرویس جدید';
+                // ۱.۲۳.۰ — دسترسی ذخیره فرم برای دکمه‌های ذخیره بخش‌ها (فیچر آزمایشی)
+                const canSaveForm = can(editing ? 'tpp_edit_services' : 'tpp_create_services');
 
                 document.getElementById('content').innerHTML = `
                 ${!TPP.offline.state().online ? '<div class="alert warn">📴 حالت آفلاین — ذخیره در دستگاه انجام و پس از اتصال اینترنت به‌صورت خودکار همگام‌سازی می‌شود.</div>' : ''}
@@ -656,6 +667,7 @@ TPP.views = TPP.views || {};
                                 <div class="grid-2">
                                         ${mainFields.map((f) => fieldHtml(f, row ? row[f.slug] : '', 'svc-')).join('')}
                                 </div>
+                                ${canSaveForm ? secSaveHtml() : ''}
                         </div>` : ''}
 
                         <div class="card">
@@ -677,6 +689,7 @@ TPP.views = TPP.views || {};
                                         ${addrFields.map((f) => fieldHtml(f, address ? address[f.slug] : '', 'addr-', !canEditAddress(editing))).join('')}
                                 </div>
                                 ${addressLocked && can('tpp_view_history') && row ? `<button type="button" class="btn btn-sm" id="addr-history-btn">🕘 تاریخچه کامل این آدرس</button>` : ''}
+                                ${canSaveForm ? secSaveHtml() : ''}
                         </div>
 
                         ${otherFields.length ? `<div class="card">
@@ -684,6 +697,7 @@ TPP.views = TPP.views || {};
                                 <div class="grid-2">
                                         ${otherFields.map((f) => fieldHtml(f, row ? row[f.slug] : '', 'svc-')).join('')}
                                 </div>
+                                ${canSaveForm ? secSaveHtml() : ''}
                         </div>` : ''}
 
                         <div class="card actions-row">
