@@ -741,11 +741,16 @@ TPP.views = TPP.views || {};
                 const total = feed.total || 0;
                 const self = !wr.userId;
 
-                // گروه‌بندی ردیف‌ها بر اساس سرویس — هر سرویس فقط یک کارت؛ ردیف‌های بدون سرویس جدا نمایش داده می‌شوند
+                // ۱.۲۶.۰ — فعالیت‌هایی که قبلاً به گزارش کار تبدیل شده‌اند (r.added) از فهرست حذف می‌شوند؛
+                // فقط فعالیت‌های هنوز-افزوده‌نشده نمایش داده می‌شوند (درخواست کاربر — فقط صفحه گزارش کار)
+                const addedRows = rows.filter((r) => r.added);
+                const visible = rows.filter((r) => !r.added);
+
+                // گروه‌بندی ردیف‌های نمایش‌داده‌شده بر اساس سرویس — هر سرویس فقط یک کارت؛ ردیف‌های بدون سرویس جدا نمایش داده می‌شوند
                 const groups = [];
                 const gmap = {};
                 const loose = [];
-                rows.forEach((r) => {
+                visible.forEach((r) => {
                         const sid = r.svc && parseInt(r.svc.id, 10) ? parseInt(r.svc.id, 10) : 0;
                         if (!sid) { loose.push(r); return; }
                         if (!gmap[sid]) { gmap[sid] = { sid: sid, svc: r.svc, rows: [] }; groups.push(gmap[sid]); }
@@ -753,15 +758,22 @@ TPP.views = TPP.views || {};
                 });
 
                 const older = total > rows.length ? '<p class="muted" style="text-align:center">' + faNum(total - rows.length) + ' فعالیت قدیمی‌تر این روز نمایش داده نشد — با افزودن دستی هم می‌توانید ثبت کنید.</p>' : '';
-                const body = (groups.length || loose.length)
-                        ? (groups.length ? '<div class="wr-acts">' + groups.map(svcCardHtml).join('') + '</div>' : '') +
-                                (loose.length ? '<div class="wr-acts"' + (groups.length ? ' style="margin-top:8px"' : '') + '>' + loose.map(looseRowHtml).join('') + '</div>' : '') + older
+                const hasVisible = groups.length || loose.length;
+                const addedNote = (addedRows.length && hasVisible)
+                        ? '<p class="muted" style="margin:8px 0 0">✅ ' + faNum(addedRows.length) + ' فعالیت این روز قبلاً به گزارش کار اضافه شده و در این فهرست نمایش داده نمی‌شود.</p>'
+                        : '';
+                const emptyHtml = addedRows.length
+                        ? '<div class="empty-state" style="padding:14px"><p class="muted">✅ همه فعالیت‌های این روز به گزارش کار اضافه شده‌اند.<br>با حذف قلم از گزارش کار، فعالیت دوباره در این فهرست ظاهر می‌شود.</p></div>'
                         : '<div class="empty-state" style="padding:14px"><p class="muted">در این روز فعالیتی ثبت نشده است.</p></div>';
+                const body = hasVisible
+                        ? (groups.length ? '<div class="wr-acts">' + groups.map(svcCardHtml).join('') + '</div>' : '') +
+                                (loose.length ? '<div class="wr-acts"' + (groups.length ? ' style="margin-top:8px"' : '') + '>' + loose.map(looseRowHtml).join('') + '</div>' : '')
+                        : emptyHtml;
                 card.innerHTML = `
                 <div class="card">
                         <h3>🕘 فعالیت‌های این روز ${self ? '' : '(' + esc(wr.data.user_name || '') + ')'}</h3>
-                        <p class="muted">تغییر / بازدید / ایجاد و پیامک‌های همین روز (جستجوها نمایش داده نمی‌شوند) — هر سرویس فقط یک‌بار با کارت اختصاصی نمایش داده می‌شود: سربرگ کارت مشخصات کامل سرویس (آدرس کامل، خیابان/بلوک، پلاک، واحد، دسته، تگ‌ها و آخرین وضعیت دایری) و بدنه کارت فهرست اقدامات همان روز است؛ دکمه «➕» خط استاندارد همان سرویس را به گزارش کار اضافه می‌کند (ایجاد → «تحویل سرویس»، سایر → «رفع مشکل»).</p>
-                        ${body}
+                        <p class="muted">تغییر / بازدید / ایجاد و پیامک‌های همین روز (جستجوها نمایش داده نمی‌شوند) — هر سرویس فقط یک‌بار با کارت اختصاصی نمایش داده می‌شود: سربرگ کارت مشخصات کامل سرویس (آدرس کامل، خیابان/بلوک، پلاک، واحد، دسته، تگ‌ها و آخرین وضعیت دایری) و بدنه کارت فهرست اقدامات همان روز است؛ دکمه «➕» خط استاندارد همان سرویس را به گزارش کار اضافه می‌کند (ایجاد → «تحویل سرویس»، سایر → «رفع مشکل»). فعالیت‌هایی که به گزارش کار اضافه شده‌اند از این فهرست حذف می‌شوند و فقط اقدامات باقی‌مانده نمایش داده می‌شوند.</p>
+                        ${body}${addedNote}${older}
                 </div>`;
 
                 card.querySelectorAll('[data-wr-svc]').forEach((b) => b.addEventListener('click', () => {

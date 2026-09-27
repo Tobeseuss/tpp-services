@@ -151,8 +151,9 @@ class TPP_Workreport {
          * CRUD
          * ------------------------------------------------------------------- */
 
-        /** افزودن قلم به گزارش روز — خروجی: id قلم جدید یا WP_Error */
-        public static function add( $user_id, $date, $content, $service_id = 0 ) {
+        /** افزودن قلم به گزارش روز — خروجی: id قلم جدید یا WP_Error
+         * ۱.۲۶.۰ — $src_row: کلید ردیف فعالیت مبدأ («change:123»/«view:45») برای مخفی‌سازی فعالیت افزوده‌شده در فید گزارش کار */
+        public static function add( $user_id, $date, $content, $service_id = 0, $src_row = '' ) {
                 $user_id = (int) $user_id;
                 if ( $user_id <= 0 ) {
                         return new WP_Error( 'tpp_wr_user', 'کاربر نامعتبر است.' );
@@ -166,6 +167,7 @@ class TPP_Workreport {
                         return new WP_Error( 'tpp_wr_content', 'متن گزارش خالی است.' );
                 }
                 $service_id = (int) $service_id;
+                $src_row = self::norm_src_row( $src_row );
                 $table = TPP_DB::table( 'work_reports' );
                 $next = (int) TPP_DB::get_var( "SELECT COALESCE(MAX(sort), 0) + 1 FROM {$table} WHERE user_id = %d AND report_date = %s", array( $user_id, $date ) );
                 $now = TPP_Date::now();
@@ -173,6 +175,7 @@ class TPP_Workreport {
                         'user_id'     => $user_id,
                         'report_date' => $date,
                         'service_id'  => $service_id,
+                        'src_row'     => $src_row,
                         'content'     => $content,
                         'sort'        => $next,
                         'created_at'  => $now,
@@ -393,12 +396,19 @@ class TPP_Workreport {
                         $service_id = (int) $row['entity_id'];
                         $action = sanitize_key( (string) $row['action'] );
                 }
+                // ۱.۲۶.۰ — هر ردیف فعالیت فقط یک‌بار به گزارش تبدیل می‌شود (جلوگیری از قلم تکراری)
+                $src_row = $src . ':' . $row_id;
+                $w = TPP_DB::table( 'work_reports' );
+                $dup = (int) TPP_DB::get_var( "SELECT id FROM {$w} WHERE user_id = %d AND src_row = %s LIMIT 1", array( $user_id, $src_row ) );
+                if ( $dup ) {
+                        return new WP_Error( 'tpp_wr_activity_added', 'این فعالیت قبلاً به گزارش کار اضافه شده است.' );
+                }
                 $prefix = self::prefix_for_action( $action );
                 $line = self::build_line( $service_id, $prefix );
                 if ( is_wp_error( $line ) ) {
                         return $line;
                 }
-                $id = self::add( $user_id, $date, $line, $service_id );
+                $id = self::add( $user_id, $date, $line, $service_id, $src_row );
                 if ( is_wp_error( $id ) ) {
                         return $id;
                 }
@@ -423,6 +433,7 @@ class TPP_Workreport {
                         user_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
                         report_date DATE NOT NULL,
                         service_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
+                        src_row VARCHAR(64) NULL,
                         content LONGTEXT NULL,
                         sort INT UNSIGNED NOT NULL DEFAULT 0,
                         created_at DATETIME NULL,
@@ -443,6 +454,24 @@ class TPP_Workreport {
                 if ( ! $exists ) {
                         TPP_DB::query( self::table_sql() );
                 }
+        }
+
+        /** ۱.۲۶.۰ — ستون src_row (ردیف فعالیت مبدأ قلم) روی نصب‌های موجود */
+        public static function ensure_src_row_column() {
+                $table = TPP_DB::table( 'work_reports' );
+                if ( ! $table ) {
+                        return;
+                }
+                TPP_Fields::ensure_column( $table, 'src_row', 'VARCHAR(64) NULL' );
+        }
+
+        /** کلید ردیف مبدأ (۱.۲۶.۰) — «change:123» یا «view:45»؛ خروجی: کلید معتبر یا '' */
+        public static function norm_src_row( $src_row ) {
+                $src_row = trim( (string) $src_row );
+                if ( ! preg_match( '/^(change|view):\d{1,15}$/', $src_row ) ) {
+                        return '';
+                }
+                return $src_row;
         }
 
         /**

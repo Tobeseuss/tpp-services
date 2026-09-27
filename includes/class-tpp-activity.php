@@ -577,6 +577,8 @@ class TPP_Activity {
                 unset( $r );
                 self::annotate_progress_titles( $rows );
                 self::enrich_service_info( $rows );
+                // ۱.۲۶.۰ — ردیف‌هایی که قبلاً به قلم گزارش کار تبدیل شده‌اند علامت می‌خورند (فقط فید گزارش کار — درخواست کاربر)
+                self::annotate_report_added( $rows, $user_id );
                 return array(
                         'date'  => $date,
                         'total' => $total,
@@ -642,6 +644,43 @@ class TPP_Activity {
                                 TPP_Categories::shape( $s ),
                                 array( 'progress' => TPP_Progress::summary( $s ) )
                         );
+                }
+                unset( $r );
+        }
+
+        /** علامت‌گذاری ردیف‌های فید که قبلاً به قلم گزارش کار همان کاربر تبدیل شده‌اند (۱.۲۶.۰)
+         * کلید مبدأ روی قلم گزارش ذخیره می‌شود («change:123»/«view:45»)؛ با حذف قلم، علامت خودبه‌خود برداشته می‌شود */
+        private static function annotate_report_added( array &$rows, $user_id ) {
+                $w = TPP_DB::table( 'work_reports' );
+                if ( ! $w || empty( $rows ) ) {
+                        return;
+                }
+                $keys = array();
+                foreach ( $rows as $r ) {
+                        $src = (string) $r['src'];
+                        if ( 'change' === $src || 'view' === $src ) {
+                                $keys[ $src . ':' . (int) $r['id'] ] = true;
+                        }
+                }
+                if ( ! $keys ) {
+                        return;
+                }
+                $placeholders = implode( ',', array_fill( 0, count( $keys ), '%s' ) );
+                $params = array_merge( array( (int) $user_id ), array_keys( $keys ) );
+                $found = TPP_DB::get_results( "SELECT DISTINCT src_row FROM {$w} WHERE user_id = %d AND src_row IN ({$placeholders})", $params );
+                if ( ! $found ) {
+                        return;
+                }
+                $map = array();
+                foreach ( (array) $found as $f ) {
+                        $map[ (string) $f['src_row'] ] = true;
+                }
+                foreach ( $rows as &$r ) {
+                        $src = (string) $r['src'];
+                        $key = ( ( 'change' === $src || 'view' === $src ) ? $src . ':' . (int) $r['id'] : '' );
+                        if ( $key && isset( $map[ $key ] ) ) {
+                                $r['added'] = true;
+                        }
                 }
                 unset( $r );
         }

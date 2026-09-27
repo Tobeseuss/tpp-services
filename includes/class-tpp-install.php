@@ -92,6 +92,8 @@ class TPP_Install {
                         TPP_Progress::backfill_failures();
                         // ۱.۱۴.۰ — جدول گزارش کار روی نصب‌های موجود (dbDelta در ارتقا همیشه جدول جدید نمی‌سازد)
                         TPP_Workreport::ensure_table();
+                        // ۱.۲۶.۰ — ستون src_row جدول گزارش کار (ردیف فعالیت مبدأ — مخفی‌سازی فعالیت‌های افزوده‌شده به گزارش)
+                        TPP_Workreport::ensure_src_row_column();
                         // ۱.۱۹.۰ — جدول دسته‌بندی‌ها + ستون‌های دسته/تگ سرویس‌ها
                         TPP_Categories::ensure_table();
                         TPP_Categories::ensure_columns();
