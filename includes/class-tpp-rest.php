@@ -255,6 +255,10 @@ class TPP_Rest {
                         /* --- ۱.۲۱.۰ — بروزآوری دیتابیس: انتقال ستون‌های یتیم به «توضیحات متفرقه» + حذف --- */
                         'tools/db-update'          => array( 'POST' => array( 'perm' => 'perm_settings', 'cb' => 'tools_db_update' ) ),
 
+                        /* --- ۱.۲۹.۰ — پاک‌سازی آدرس‌های بدون سرویس (یتیم) --- */
+                        'tools/orphan-addresses'         => array( 'GET'  => array( 'perm' => 'perm_settings', 'cb' => 'tools_orphan_addresses_count' ) ),
+                        'tools/orphan-addresses/cleanup' => array( 'POST' => array( 'perm' => 'perm_settings', 'cb' => 'tools_orphan_addresses_cleanup' ) ),
+
                         /* --- ۱.۱۹.۰ — دسته‌بندی پروژه‌ها و تگ‌های سیستمی --- */
                         'categories'               => array(
                                 'GET'  => array( 'perm' => 'perm_access', 'cb' => 'categories_list' ),
@@ -1848,6 +1852,33 @@ class TPP_Rest {
                 return self::ok( $report );
         }
 
+        /** ۱.۲۹.۰ — شمارش آدرس‌های بدون سرویس (یتیم) */
+        public function tools_orphan_addresses_count() {
+                return self::ok( array(
+                        'orphan_count'      => tpp()->services()->count_orphan_addresses(),
+                        'checked_at_jalali' => TPP_Date::jalali_now( true ),
+                ) );
+        }
+
+        /** ۱.۲۹.۰ — پاک‌سازی آدرس‌های بدون سرویس (پشتیبان کامل خودکار پیش از اجرا — زنجیره اطمینان مثل اصلاح اعداد) */
+        public function tools_orphan_addresses_cleanup() {
+                try {
+                        $backup = TPP_Backup::create( 'pre_orphan_addr', get_current_user_id() );
+                } catch ( Throwable $e ) {
+                        return self::err( 'tpp_backup_error', 'پشتیبان‌گیری خودکار ناموفق بود: ' . $e->getMessage(), 500 );
+                }
+                if ( is_wp_error( $backup ) ) {
+                        return self::err( $backup->get_error_code(), 'پشتیبان‌گیری خودکار ناموفق بود: ' . $backup->get_error_message(), 500 );
+                }
+                try {
+                        $result = tpp()->services()->cleanup_orphan_addresses();
+                } catch ( Throwable $e ) {
+                        return self::err( 'tpp_orphan_cleanup_error', 'خطا در پاک‌سازی آدرس‌های بدون سرویس: ' . $e->getMessage(), 500 );
+                }
+                $result['backup'] = $backup;
+                return self::ok( $result );
+        }
+
         /** ۱.۱۸.۰ — اصلاح اعداد فارسی/عربی به انگلیسی در همه فیلدها (با پشتیبان خودکار پیش از اجرا) */
         public function numbers_fix( WP_REST_Request $request ) {
                 $dry_run = ! empty( $request->get_param( 'dry_run' ) );
@@ -2406,6 +2437,8 @@ class TPP_Rest {
                                 $ep( 'POST', 'review/keep', 'نگه‌داشتن تغییر', '{id} — علامت «بازبینی شد/نگه داشته شد»؛ تغییر باقی می‌ماند (پیش‌فرض همه تغییرات می‌مانند).', 'بازبینی اقدامات نصاب‌ها', array(), array( 'id' => 101 ) ),
                                 $ep( 'POST', 'review/revert', 'بازگردانی به حالت قبل', '{id} — وضعیت دقیق قبل از تغییر بازمی‌گردد: ثبت → سرویس حذف می‌شود؛ ویرایش → ستون‌های سرویس/آدرس عیناً بازنویسی؛ حذف → سرویس با همان شناسه بازساز. اگر سرویس بعد از تغییر دوباره ویرایش شده باشد بازگردانی انجام نمی‌شود (محافظ تغییرات جدیدتر).', 'بازبینی اقدامات نصاب‌ها', array(), array( 'id' => 101 ) ),
                                 $ep( 'POST', 'tools/db-update', 'بروزآوری دیتابیس (۱.۲۱.۰)', 'ستون‌های یتیم (بدون فیلد فعال) هر دو جدول services/addresses پیدا می‌شود، محتوایشان قالب‌بندی‌شده («🔹 عنوان: مقدار») به فیلد «توضیحات متفرقه» سرویس‌ها منتقل و ستون‌ها کامل حذف می‌شود. پیش از اجرا پشتیبان کامل خودکار روی سرور گرفته می‌شود (پاسخ شامل متادیتای پشتیبان و ستون‌های باقی‌مانده).', 'تنظیمات (مدیر کل)' ),
+                                $ep( 'GET', 'tools/orphan-addresses', 'شمارش آدرس‌های بدون سرویس (۱.۲۹.۰)', 'تعداد آدرس‌هایی که هیچ سرویسی روی آن‌ها ثبت نیست (یتیم — معمولاً بقایای حذف سرویس‌ها در نسخه‌های قدیم) را برمی‌گرداند.', 'تنظیمات (مدیر کل)' ),
+                                $ep( 'POST', 'tools/orphan-addresses/cleanup', 'پاک‌سازی آدرس‌های بدون سرویس (۱.۲۹.۰)', 'آدرس‌های بدون سرویس به‌همراه رکوردهای تاریخچه یتیمشان حذف می‌شوند؛ پیش از اجرا پشتیبان کامل خودکار گرفته می‌شود (پاسخ شامل متادیتای پشتیبان برای بازگردانی یک‌کلیکی).', 'تنظیمات (مدیر کل)' ),
                         ) ),
 
                         array( 'title' => 'ایمپورت اکسل (۳ مرحله‌ای)', 'items' => array(

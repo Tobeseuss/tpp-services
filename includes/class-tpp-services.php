@@ -167,6 +167,44 @@ class TPP_Services {
                 return TPP_DB::get_results( "SELECT * FROM " . TPP_DB::table( 'services' ) . " WHERE address_id = %d ORDER BY id ASC", array( (int) $address_id ) );
         }
 
+        /** ۱.۲۹.۰ — شمارش آدرس‌های بدون سرویس (یتیم — معمولاً بقایای حذف سرویس‌ها در نسخه‌های قدیم) */
+        public function count_orphan_addresses() {
+                return (int) TPP_DB::get_var(
+                        "SELECT COUNT(*) FROM " . TPP_DB::table( 'addresses' ) . " a WHERE NOT EXISTS (SELECT 1 FROM " . TPP_DB::table( 'services' ) . " s WHERE s.address_id = a.id)"
+                );
+        }
+
+        /**
+         * ۱.۲۹.۰ — پاک‌سازی آدرس‌های بدون سرویس به‌همراه رکوردهای تاریخچه یتیمشان.
+         * پشتیبان‌گیری کامل قبل از اجرا توسط لایه REST انجام می‌شود (زنجیره اطمینان مثل اصلاح اعداد)؛
+         * اگر پشتیبان ناموفق باشد، این متد اصلاً فراخوانی نمی‌شود.
+         */
+        public function cleanup_orphan_addresses() {
+                $orphans = TPP_DB::get_results(
+                        "SELECT a.id FROM " . TPP_DB::table( 'addresses' ) . " a WHERE NOT EXISTS (SELECT 1 FROM " . TPP_DB::table( 'services' ) . " s WHERE s.address_id = a.id)"
+                );
+                $ids = array();
+                foreach ( (array) $orphans as $row ) {
+                        $ids[] = (int) $row['id'];
+                }
+                $before = count( $ids );
+                $result = array(
+                        'orphan_before'   => $before,
+                        'deleted'         => 0,
+                        'history_deleted' => 0,
+                        'ran_at'          => TPP_Date::now(),
+                        'ran_at_jalali'   => TPP_Date::jalali_now( true ),
+                );
+                if ( 0 === $before ) {
+                        return $result; // چیزی برای پاک‌سازی نیست
+                }
+                $in = implode( ',', array_map( 'intval', $ids ) );
+                // اول تاریخچه یتیم آدرس‌ها (رویدادهای ایجاد/ویرایش آدرس)، بعد خود آدرس‌ها
+                $result['history_deleted'] = (int) TPP_DB::query( "DELETE FROM " . TPP_DB::table( 'history' ) . " WHERE address_id IN (" . $in . ")" );
+                $result['deleted']         = (int) TPP_DB::query( "DELETE FROM " . TPP_DB::table( 'addresses' ) . " WHERE id IN (" . $in . ")" );
+                return $result;
+        }
+
         /* ---------------------------------------------------------------------
          * سرویس‌ها — CRUD
          * ------------------------------------------------------------------- */

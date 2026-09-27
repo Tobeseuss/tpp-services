@@ -608,7 +608,7 @@ TPP.views = TPP.views || {};
                                 list.innerHTML = '<p class="muted" style="margin-top:10px">هنوز هیچ پشتیبانی ذخیره نشده است — با اولین ایمپورت گروهی (یا دکمه «گرفتن پشتیبان تازه») ساخته می‌شود.</p>';
                                 return;
                         }
-                        const ctxLabel = { import: 'خودکار (قبل از ایمپورت)', manual: 'دستی', numfix: 'خودکار (قبل از اصلاح اعداد)' }; // 1.18.0
+                        const ctxLabel = { import: 'خودکار (قبل از ایمپورت)', manual: 'دستی', numfix: 'خودکار (قبل از اصلاح اعداد)', pre_db_update: 'خودکار (قبل از بروزآوری دیتابیس)', pre_orphan_addr: 'خودکار (قبل از پاک‌سازی آدرس‌های بدون سرویس)' }; // 1.18.0 + 1.21.0 + 1.29.0
                         list.innerHTML = '<div class="table-wrap" style="margin-top:10px"><table class="tpp-table"><thead><tr>' +
                                 '<th>فایل</th><th>تاریخ</th><th>نوع</th><th>کاربر</th><th>حجم</th><th>محتوا</th><th>عملیات</th>' +
                                 '</tr></thead><tbody>' +
@@ -616,7 +616,7 @@ TPP.views = TPP.views || {};
                                         <tr data-sb="${esc(it.filename)}">
                                                 <td><code dir="ltr" style="font-size:11px">${esc(it.filename)}</code></td>
                                                 <td>${esc(fmtDate(it.created_at))}</td>
-                                                <td>${it.context === 'import' || it.context === 'numfix' ? '<span class="chip ok">' + esc(ctxLabel[it.context] || it.context) + '</span>' : '<span class="chip">' + esc(ctxLabel.manual || it.context) + '</span>'}</td>
+                                                <td>${it.context === 'manual' ? '<span class="chip">' + esc(ctxLabel[it.context] || it.context) + '</span>' : '<span class="chip ok">' + esc(ctxLabel[it.context] || it.context) + '</span>'}</td>
                                                 <td class="muted">${esc(it.user || '—')}</td>
                                                 <td>${it.size ? Math.max(1, Math.round((it.size || 0) / 1024)) + ' KB' : '—'}</td>
                                                 <td class="muted">${it.counts ? esc(String(it.counts.services || 0)) + ' سرویس / ' + esc(String(it.counts.addresses || 0)) + ' آدرس' : '—'}</td>
@@ -1777,6 +1777,16 @@ TPP.views = TPP.views || {};
                 </div>
 
                 <div class="card">
+                        <h3>🧹 پاک‌سازی آدرس‌های بدون سرویس (۱.۲۹.۰)</h3>
+                        <p class="muted">آدرس‌هایی که هیچ سرویسی روی آن‌ها ثبت نیست (معمولاً بقایای حذف سرویس‌ها در نسخه‌های قدیم) پیدا و به‌همراه رکوردهای تاریخچه یتیمشان از دیتابیس حذف می‌شوند. <b>پیش از اجرا یک پشتیبان کامل خودکار روی سرور گرفته می‌شود</b> و بعد از پایان، همین‌جا با یک کلیک قابل بازگردانی است.</p>
+                        <div class="actions-row" style="display:flex;gap:8px;flex-wrap:wrap">
+                                <button class="btn" id="oa-count">🔍 شمارش آدرس‌های بدون سرویس</button>
+                                <button class="btn btn-primary" id="oa-run">🧹 پاک‌سازی</button>
+                        </div>
+                        <div id="oa-result" style="margin-top:10px"></div>
+                </div>
+
+                <div class="card">
                         <h3>📱 پنل پیامک (SMS.ir)</h3>
                         <p class="muted">اتصال به سرویس پیامک <a href="https://sms.ir/rest-api/" target="_blank" rel="noopener">sms.ir</a> برای نمایش موجودی و ارسال مشخصات سرویس با پیامک. کلید API را از پنل کاربری sms.ir بخش «کلیدهای دسترسی» (منوی توسعه‌دهندگان) دریافت کنید.</p>
                         <div class="grid-2">
@@ -1890,6 +1900,54 @@ TPP.views = TPP.views || {};
                                         } catch (e) { nfBox().innerHTML += '<div class="alert err">خطا در بازگردانی: ' + esc(e.message) + '</div>'; rb.disabled = false; }
                                 });
                         } catch (e) { nfBox().innerHTML = '<div class="alert err">خطا: ' + esc(e.message) + '</div>'; }
+                        btn.disabled = false;
+                });
+
+                /* ---------- ۱.۲۹.۰ — پاک‌سازی آدرس‌های بدون سرویس ---------- */
+                const oaBox = () => document.getElementById('oa-result');
+                document.getElementById('oa-count').addEventListener('click', async () => {
+                        const btn = document.getElementById('oa-count');
+                        btn.disabled = true;
+                        oaBox().innerHTML = '<div class="loading-block"><div class="spinner"></div></div>';
+                        try {
+                                const res = await TPP.api.request('GET', 'tools/orphan-addresses');
+                                const n = (res && res.orphan_count) || 0;
+                                oaBox().innerHTML = '<div class="alert ' + (n ? 'warn' : 'success') + '">' +
+                                        (n ? '🔍 ' + n.toLocaleString('fa-IR') + ' آدرس بدون سرویس پیدا شد' + (res && res.checked_at_jalali ? ' — ' + esc(res.checked_at_jalali) : '') + ' — با دکمه «پاک‌سازی» حذف می‌شوند.' : 'هیچ آدرس بدون سرویسی وجود ندارد — دیتابیس تمیز است. ✅') + '</div>';
+                        } catch (e) { oaBox().innerHTML = '<div class="alert err">خطا: ' + esc(e.message) + '</div>'; }
+                        btn.disabled = false;
+                });
+                document.getElementById('oa-run').addEventListener('click', async () => {
+                        const ok = await confirmBox(
+                                'همه آدرس‌های بدون سرویس (به‌همراه رکوردهای تاریخچه یتیمشان) از دیتابیس حذف شوند؟<br>' +
+                                '<span class="muted">پیش از اجرا، <b>یک پشتیبان کامل خودکار</b> گرفته و روی سرور ذخیره می‌شود و بعد از پایان، همین‌جا با یک کلیک قابل بازگردانی است.</span>',
+                                'پاک‌سازی آدرس‌های بدون سرویس');
+                        if (!ok) return;
+                        const btn = document.getElementById('oa-run');
+                        btn.disabled = true;
+                        oaBox().innerHTML = '<div class="loading-block"><div class="spinner"></div></div>';
+                        try {
+                                const res = await TPP.api.request('POST', 'tools/orphan-addresses/cleanup');
+                                const bk = res && res.backup ? res.backup : null;
+                                let html = '<div class="alert success">✅ پاک‌سازی انجام شد — ' + ((res && res.deleted) || 0).toLocaleString('fa-IR') + ' آدرس و ' + ((res && res.history_deleted) || 0).toLocaleString('fa-IR') + ' رکورد تاریخچه یتیم حذف شد' + (res && res.ran_at_jalali ? ' — ' + esc(res.ran_at_jalali) : '') + '</div>';
+                                if (bk && bk.filename) {
+                                        html += '<div class="alert warn">🛡 پشتیبان کامل پیش از اجرا گرفته شد: <code dir="ltr">' + esc(bk.filename) + '</code>' +
+                                                (bk.created_at_jalali ? ' — ' + esc(bk.created_at_jalali) : '') +
+                                                ' <button class="btn btn-sm" id="oa-restore">♻️ بازگردانی همین پشتیبان</button></div>';
+                                }
+                                oaBox().innerHTML = html;
+                                const rb = document.getElementById('oa-restore');
+                                if (rb) rb.addEventListener('click', async () => {
+                                        const ok2 = await confirmBox('همه داده‌ها به وضعیتِ قبل از پاک‌سازی بازگردانی شود؟<br><span class="muted">پشتیبان: <code dir="ltr">' + esc(bk.filename) + '</code></span>', 'بازگردانی');
+                                        if (!ok2) return;
+                                        rb.disabled = true;
+                                        try {
+                                                const rres = await TPP.api.request('POST', 'backup/stored/restore', { filename: bk.filename });
+                                                renderRestoreSummary(rres, 'oa-result');
+                                                toast('بازگردانی کامل شد.', 'success');
+                                        } catch (e) { oaBox().innerHTML += '<div class="alert err">خطا در بازگردانی: ' + esc(e.message) + '</div>'; rb.disabled = false; }
+                                });
+                        } catch (e) { oaBox().innerHTML = '<div class="alert err">خطا: ' + esc(e.message) + '</div>'; }
                         btn.disabled = false;
                 });
 
