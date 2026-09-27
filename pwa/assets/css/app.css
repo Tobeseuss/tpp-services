@@ -1331,10 +1331,19 @@ html.tpp-embed .login-screen { min-height: 60vh; }
 .wr-svc-foot { display: flex; align-items: center; gap: 10px; border-top: 1px dashed var(--border); padding-top: 8px; }
 .wr-svc-foot .muted { font-size: 12px; }
 [data-theme="light"] .wr-svc-card { background: #f7f9fd; }
+/* ۱.۲۴.۰ — شبکه اطلاعات کامل سرویس در سربرگ کارت (آدرس/بلوک/پلاک/واحد/دسته/تگ + نشان وضعیت دایری) */
+.wr-svc-info { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 18px; font-size: 12.5px; border: 1px solid var(--border); border-radius: 9px; background: color-mix(in srgb, var(--border) 14%, transparent); padding: 8px 10px; }
+.wr-info-item { display: flex; align-items: baseline; gap: 4px; min-width: 0; }
+.wr-info-wide { grid-column: 1 / -1; }
+.wr-info-k { color: var(--muted, #9aa7b8); white-space: nowrap; flex: none; }
+.wr-info-v { color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wr-info-wide .wr-info-v { white-space: normal; word-break: break-word; }
+.wr-diary-chip { font-size: 12px; }
 @media (max-width: 640px) {
         .wr-act-detail { white-space: normal; flex-basis: 100%; order: 3; }
         .wr-svc-foot { flex-wrap: wrap; }
         .wr-svc-foot .btn { flex: 1 1 auto; }
+        .wr-svc-info { grid-template-columns: 1fr; }
 }
 
 /* ۱.۲۳.۰ — ردیف دکمه ذخیره در پایین هر بخش فرم سرویس (فیچر آزمایشی) */

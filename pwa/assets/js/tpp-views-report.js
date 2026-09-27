@@ -720,6 +720,8 @@ TPP.views = TPP.views || {};
          * هر سرویس فقط یک‌بار با کارت اختصاصی نمایش داده می‌شود و
          * اقدامات انجام‌شده روی آن داخل کارت خودش فهرست می‌شود
          * (درخواست کاربر ۱.۲۲.۰ — حذف ردیف‌های تکراری یک سرویس)
+         * از ۱.۲۴.۰ — سربرگ کارت مشخصات کامل سرویس را نشان می‌دهد:
+         * آدرس کامل، خیابان/بلوک، پلاک، واحد، دسته، تگ‌ها و آخرین وضعیت دایری
          * ============================================================ */
 
         const FEED_ICONS = { change: '📝', view: '👁', sms: '📨' };
@@ -758,7 +760,7 @@ TPP.views = TPP.views || {};
                 card.innerHTML = `
                 <div class="card">
                         <h3>🕘 فعالیت‌های این روز ${self ? '' : '(' + esc(wr.data.user_name || '') + ')'}</h3>
-                        <p class="muted">تغییر / بازدید / ایجاد و پیامک‌های همین روز (جستجوها نمایش داده نمی‌شوند) — هر سرویس فقط یک‌بار با کارت اختصاصی نمایش داده می‌شود و اقداماتش داخل کارتش فهرست است؛ دکمه «➕» خط استاندارد همان سرویس را به گزارش کار اضافه می‌کند (ایجاد → «تحویل سرویس»، سایر → «رفع مشکل»).</p>
+                        <p class="muted">تغییر / بازدید / ایجاد و پیامک‌های همین روز (جستجوها نمایش داده نمی‌شوند) — هر سرویس فقط یک‌بار با کارت اختصاصی نمایش داده می‌شود: سربرگ کارت مشخصات کامل سرویس (آدرس کامل، خیابان/بلوک، پلاک، واحد، دسته، تگ‌ها و آخرین وضعیت دایری) و بدنه کارت فهرست اقدامات همان روز است؛ دکمه «➕» خط استاندارد همان سرویس را به گزارش کار اضافه می‌کند (ایجاد → «تحویل سرویس»، سایر → «رفع مشکل»).</p>
                         ${body}
                 </div>`;
 
@@ -771,11 +773,46 @@ TPP.views = TPP.views || {};
                 }));
         }
 
-        /** کارت یک سرویس: سربرگ (شناسه + آدرس کامل) + فهرست اقدامات روز + یک دکمه افزودن */
+        /**
+         * کارت یک سرویس: سربرگ (شناسه + دکمه مشاهده + نشان وضعیت دایری + شبکه اطلاعات کامل)
+         * + فهرست اقدامات روز + یک دکمه افزودن
+         * ۱.۲۴.۰ — سربرگ کارت طبق درخواست کاربر کامل شد: آدرس کامل، نام خیابان/بلوک،
+         * شماره پلاک، شماره واحد، دسته‌بندی، تگ‌ها و آخرین وضعیت دایری سرویس
+         */
+
+        /** نشان «آخرین وضعیت دایری» سرویس — برچسب آماده سرور + درصد پیشرفت + جزئیات آخرین مرحله در tooltip */
+        function diaryChipHtml(svc) {
+                const p = svc && svc.progress;
+                if (!p) return '';
+                const fails = (p.failures && p.failures.length) ? p.failures : [];
+                let label = String(p.status_label || '');
+                if (!fails.length && p.status === 'progress' && p.pct) label += ' (' + faNum(p.pct) + '٪)';
+                const cls = fails.length ? 'chip err' : (p.status === 'done' ? 'chip ok' : (p.status === 'progress' ? 'chip warn' : 'chip'));
+                const title = p.last_label
+                        ? 'آخرین مرحله دایری: ' + p.last_label + ' (' + faNum(p.done || 0) + ' از ' + faNum(p.total || 16) + ' مرحله)' + (p.excluded_count ? ' — ' + faNum(p.excluded_count) + ' مرحله ردشده توسط کاربر' : '')
+                        : 'آخرین وضعیت دایری ثبت‌شده برای این سرویس';
+                return '<span class="' + cls + ' wr-diary-chip" title="' + esc(title) + '">' + esc(label) + '</span>';
+        }
+
+        /** شبکه اطلاعات سربرگ کارت: آدرس کامل، خیابان/بلوک، پلاک، واحد، دسته، تگ‌ها (+ شماره مجازی) */
+        function svcInfoHtml(svc) {
+                const cat = svc.category && svc.category.label ? String(svc.category.label) : '';
+                const tags = Array.isArray(svc.tags) ? svc.tags.map((t) => (t && t.label) ? String(t.label) : '').filter(Boolean).join('، ') : '';
+                const items = [
+                        ['آدرس کامل', svc.full_address, 'wr-info-wide'],
+                        ['خیابان/بلوک', svc.block, ''],
+                        ['پلاک', svc.plate, ''],
+                        ['واحد', svc.unit, ''],
+                        ['دسته', cat, ''],
+                        ['تگ‌ها', tags, 'wr-info-wide'],
+                ];
+                if (svc.virtual_number) items.push(['شماره مجازی', svc.virtual_number, '']);
+                const cell = (k, v, cls) => '<div class="wr-info-item ' + cls + '"><span class="wr-info-k">' + esc(k) + ':</span><span class="wr-info-v" title="' + esc(String(v || '')) + '">' + (v ? esc(String(v)) : '—') + '</span></div>';
+                return '<div class="wr-svc-info">' + items.map((it) => cell(it[0], it[1], it[2])).join('') + '</div>';
+        }
+
         function svcCardHtml(g) {
                 const svc = g.svc || {};
-                const addrParts = [svc.full_address, svc.block, svc.plate ? 'پلاک ' + svc.plate : '', svc.unit ? 'واحد ' + svc.unit : ''].filter(Boolean);
-                const addrLine = (addrParts.length ? esc(addrParts.join('، ')) : 'بدون آدرس') + (svc.virtual_number ? ' — شماره مجازی: ' + esc(svc.virtual_number) : '');
                 const addable = g.rows.filter((r) => r.src === 'change' || r.src === 'view');
                 const canAdd = addable.length > 0 && canEdit();
                 return `
@@ -784,8 +821,9 @@ TPP.views = TPP.views || {};
                                 <div class="wr-svc-id">
                                         <span class="chip">🛰️ سرویس #${faNum(g.sid)}</span>
                                         <button class="btn btn-sm" data-wr-svc="${esc(String(g.sid))}" title="بازکردن صفحه سرویس">مشاهده سرویس</button>
+                                        ${diaryChipHtml(svc)}
                                 </div>
-                                <div class="wr-act-addr">${addrLine}</div>
+                                ${svcInfoHtml(svc)}
                         </div>
                         <div class="wr-svc-acts">${g.rows.map(actLineHtml).join('')}</div>
                         ${canAdd ? '<div class="wr-svc-foot"><button class="btn btn-sm btn-primary wr-act-add" data-wr-addg="' + esc(String(g.sid)) + '" title="افزودن خط استاندارد این سرویس به گزارش کار (ایجاد → تحویل سرویس، سایر → رفع مشکل)">➕ افزودن به گزارش کار</button><span class="muted">' + faNum(addable.length) + ' اقدام قابل ثبت</span></div>' : ''}

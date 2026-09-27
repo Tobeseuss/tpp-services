@@ -534,6 +534,8 @@ class TPP_Activity {
          * تغییرات + بازدید + پیامک همان روز — «بدون جستجوها» (درخواست کاربر: فعالیت‌های جستجو
          * برای افزودن به گزارش کار نمایش داده نشوند). هر ردیفِ قابل افزودن، آدرس کامل سرویس
          * (آدرس کامل/بلوک/پلاک/واحد + شماره مجازی) را هم دارد.
+         * ۱.۲۴.۰ — اطلاعات سرویس در فید کامل‌تر شد: دسته‌بندی + تگ‌ها + آخرین وضعیت دایری
+         * (خلاصه پیشرفت) برای نمایش در سربرگ کارت اختصاصی هر سرویس (درخواست کاربر).
          */
         public static function workreport_feed( $user_id, $date, $page = 1, $per_page = 50 ) {
                 $user_id = (int) $user_id;
@@ -631,6 +633,12 @@ class TPP_Activity {
                                 'plate'         => $a ? (string) ( $a['f_plate'] ?? '' ) : '',
                                 'unit'          => $a ? (string) ( $a['f_unit'] ?? '' ) : '',
                                 'virtual_number'=> (string) ( $s['f_virtual_number'] ?? '' ),
+                        );
+                        // ۱.۲۴.۰ — دسته/تگ + آخرین وضعیت دایری برای سربرگ کارت سرویس در گزارش فعالیت‌ها
+                        $r['svc'] = array_merge(
+                                $r['svc'],
+                                TPP_Categories::shape( $s ),
+                                array( 'progress' => TPP_Progress::summary( $s ) )
                         );
                 }
                 unset( $r );
