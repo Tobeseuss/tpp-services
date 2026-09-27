@@ -355,6 +355,8 @@ class TPP_Activity {
                 unset( $r );
                 // ۱.۱۲.۰ — رویدادهای تغییرِ حاوی تغییر پیشرفت دایری در عنوان علامت می‌گیرند
                 self::annotate_progress_titles( $rows );
+                // ۱.۲۵.۰ — اطلاعات سرویس (آدرس/بلوک/پلاک/واحد/دسته/تگ/وضعیت دایری) برای کارت اختصاصی هر سرویس
+                self::enrich_service_info( $rows );
                 return array(
                         'total' => $total,
                         'rows'  => self::decorate_views( $rows ),

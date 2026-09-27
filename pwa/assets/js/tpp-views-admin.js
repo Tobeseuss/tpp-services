@@ -815,6 +815,7 @@ TPP.views = TPP.views || {};
                 <div class="card">
                         <h3>📋 گزارش فعالیت کاربران</h3>
                         <p class="muted">چه کسی چه سرویسی را <b>ایجاد/ویرایش/حذف</b> کرد، چه سرویسی را <b>بازدید</b> کرد و چه چیزی <b>جستجو</b> کرد — همه در یک گزارش. جستجوهای در حال تایپ (آجاکس) در پنجره زمانی تنظیم‌شده به‌صورت یک جستجوی واحد ثبت می‌شوند. مدت نگهداری از تنظیمات قابل تغییر است.</p>
+                        <p class="muted">🛰️ در تب‌های «همه» و «تغییرات»، تغییرات و اقدامات هر سرویس تجمیع می‌شود و در کارت مخصوص همان سرویس نمایش داده می‌شود — سربرگ هر کارت: آدرس کامل، نام خیابان/بلوک، شماره پلاک، شماره واحد، دسته‌بندی، تگ‌ها و آخرین وضعیت دایری سرویس.</p>
                         <div id="act-stats" class="act-stats"></div>
                         <div class="search-bar" style="flex-wrap:wrap">
                                 <button class="btn ${activityState.tab === 'all' ? 'btn-primary' : ''}" data-act-tab="all">🗂 همه</button>
@@ -950,6 +951,10 @@ TPP.views = TPP.views || {};
                         area.querySelectorAll('tr[data-svc]').forEach((tr) => {
                                 tr.addEventListener('click', () => go('service/' + tr.getAttribute('data-svc')));
                         });
+                        // ۱.۲۵.۰ — دکمه «مشاهده سرویس» در سربرگ کارت‌های سرویس
+                        area.querySelectorAll('button[data-act-svc-go]').forEach((b) => {
+                                b.addEventListener('click', () => go('service/' + b.getAttribute('data-act-svc-go')));
+                        });
                 } catch (e) {
                         area.innerHTML = '<div class="alert err">خطا در دریافت گزارش: ' + esc(e.message) + '</div>';
                 }
@@ -967,9 +972,92 @@ TPP.views = TPP.views || {};
                 }
         }
 
-        const ACT_SRC_FA = { change: 'تغییر', view: 'بازدید', search: 'جستجو', sms: 'پیامک' };
         const ACT_ACTION_FA = { create: 'ایجاد', update: 'ویرایش', delete: 'حذف', merge: 'ادغام', restore: 'بازگردانی', view: 'بازدید', search: 'جستجو', sms: 'پیامک' };
         const ACT_SRC_ICON = { change: '📝', view: '👁', search: '🔍', sms: '📨' };
+
+        /* ۱.۲۵.۰ — کارت اختصاصی هر سرویس در تب‌های «همه» و «تغییرات» (همان طراحی گزارش کار):
+         * تغییرات/اقدامات یک سرویس تجمیع و داخل کارت خودش فهرست می‌شود؛
+         * سربرگ کارت: آدرس کامل، خیابان/بلوک، پلاک، واحد، دسته، تگ‌ها و آخرین وضعیت دایری */
+        const actFaNum = (n) => String(n).replace(/[0-9]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[+d]);
+
+        /** شرح اقدام بدون پیشوند تکراری «سرویس #N — » (شناسه سرویس در سربرگ کارت هست) */
+        function actRowDetail(r) {
+                return esc(String(r.title || '').replace(/^سرویس\s*#\d+\s*—\s*/, '') || '—');
+        }
+
+        /** نشان «آخرین وضعیت دایری» سرویس — برچسب آماده سرور + درصد پیشرفت + جزئیات آخرین مرحله در tooltip */
+        function actDiaryChipHtml(svc) {
+                const p = svc && svc.progress;
+                if (!p) return '';
+                const fails = (p.failures && p.failures.length) ? p.failures : [];
+                let label = String(p.status_label || '');
+                if (!fails.length && p.status === 'progress' && p.pct) label += ' (' + actFaNum(p.pct) + '٪)';
+                const cls = fails.length ? 'chip err' : (p.status === 'done' ? 'chip ok' : (p.status === 'progress' ? 'chip warn' : 'chip'));
+                const title = p.last_label
+                        ? 'آخرین مرحله دایری: ' + p.last_label + ' (' + actFaNum(p.done || 0) + ' از ' + actFaNum(p.total || 16) + ' مرحله)' + (p.excluded_count ? ' — ' + actFaNum(p.excluded_count) + ' مرحله ردشده توسط کاربر' : '')
+                        : 'آخرین وضعیت دایری ثبت‌شده برای این سرویس';
+                return '<span class="' + cls + ' wr-diary-chip" title="' + esc(title) + '">' + esc(label) + '</span>';
+        }
+
+        /** شبکه اطلاعات سربرگ کارت: آدرس کامل، خیابان/بلوک، پلاک، واحد، دسته، تگ‌ها (+ شماره مجازی) */
+        function actSvcInfoHtml(svc) {
+                const cat = svc.category && svc.category.label ? String(svc.category.label) : '';
+                const tags = Array.isArray(svc.tags) ? svc.tags.map((t) => (t && t.label) ? String(t.label) : '').filter(Boolean).join('، ') : '';
+                const items = [
+                        ['آدرس کامل', svc.full_address, 'wr-info-wide'],
+                        ['خیابان/بلوک', svc.block, ''],
+                        ['پلاک', svc.plate, ''],
+                        ['واحد', svc.unit, ''],
+                        ['دسته', cat, ''],
+                        ['تگ‌ها', tags, 'wr-info-wide'],
+                ];
+                if (svc.virtual_number) items.push(['شماره مجازی', svc.virtual_number, '']);
+                const cell = (k, v, cls) => '<div class="wr-info-item ' + cls + '"><span class="wr-info-k">' + esc(k) + ':</span><span class="wr-info-v" title="' + esc(String(v || '')) + '">' + (v ? esc(String(v)) : '—') + '</span></div>';
+                return '<div class="wr-svc-info">' + items.map((it) => cell(it[0], it[1], it[2])).join('') + '</div>';
+        }
+
+        /** یک خط اقدام داخل کارت — نام کاربر هم نمایش داده می‌شود (گزارش فعالیت همه کاربران را پوشش می‌دهد) */
+        function actLineHtml(r) {
+                return `
+                <div class="wr-svc-act">
+                        <span class="chip">${ACT_SRC_ICON[r.src] || '•'} ${esc(ACT_ACTION_FA[r.action] || r.action)}</span>
+                        <span class="wr-act-detail">${actRowDetail(r)}</span>
+                        <span class="muted" style="white-space:nowrap">${esc(r.user_name || '')}</span>
+                        <span class="muted wr-act-time">${fmtDate(r.ts)}</span>
+                </div>`;
+        }
+
+        /** کارت اختصاصی یک سرویس: سربرگ (شناسه + دکمه مشاهده + نشان وضعیت دایری + شبکه اطلاعات) + فهرست اقدامات */
+        function actSvcCardHtml(g) {
+                const svc = g.svc || {};
+                return `
+                <div class="wr-svc-card">
+                        <div class="wr-svc-head">
+                                <div class="wr-svc-id">
+                                        <span class="chip">🛰️ سرویس #${actFaNum(g.sid)}</span>
+                                        <button class="btn btn-sm" data-act-svc-go="${esc(String(g.sid))}" title="بازکردن صفحه سرویس">مشاهده سرویس</button>
+                                        ${actDiaryChipHtml(svc)}
+                                </div>
+                                ${actSvcInfoHtml(svc)}
+                        </div>
+                        <div class="wr-svc-acts">${g.rows.map(actLineHtml).join('')}</div>
+                </div>`;
+        }
+
+        /** ردیف بدون سرویس (جستجو یا سرویس حذف‌شده) — فهرست ساده زیر کارت‌ها */
+        function actLooseRowHtml(r) {
+                const extra = (r.src === 'search' && r.extra && typeof r.extra === 'object')
+                        ? ` <span class="muted">(${esc(String(r.extra.n || 1))} تایپ — ${esc(String(r.extra.r || 0))} نتیجه)</span>` : '';
+                return `
+                <div class="wr-act-row">
+                        <div class="wr-act-main">
+                                <span class="chip">${ACT_SRC_ICON[r.src] || '•'} ${esc(ACT_ACTION_FA[r.action] || r.action)}</span>
+                                <span class="wr-act-title">${esc(r.title || '—')}${extra}</span>
+                                <span class="muted" style="white-space:nowrap">${esc(r.user_name || '')}</span>
+                                <span class="muted" style="white-space:nowrap">${fmtDate(r.ts)}</span>
+                        </div>
+                </div>`;
+        }
 
         function activityHtml(data) {
                 const rows = data.rows || [];
@@ -1001,31 +1089,25 @@ TPP.views = TPP.views || {};
                                 <p class="muted">جستجوهای در حال تایپ (مثلاً حرف‌به‌حرف در جستجوی آجاکسی) در پنجره زمانی تنظیم‌شده به یک رکورد با عبارت نهایی تبدیل می‌شوند.</p></div>`;
                 }
                 // تب «همه» و «تغییرات» — فید یکپارچه
-                return `<div class="card"><div class="table-wrap"><table class="tpp-table">
-                        <thead><tr><th></th><th>عملیات</th><th>کاربر</th><th>هدف</th><th>شرح</th><th>زمان</th></tr></thead>
-                        <tbody>${rows.map((r) => {
-                                const svc = r.src === 'search' ? 0 : r.target_id;
-                                const actionChip = `<span class="chip ${r.action === 'delete' ? 'err' : (r.action === 'create' ? 'ok' : '')}">${ACT_SRC_ICON[r.src] || ''} ${esc(ACT_ACTION_FA[r.action] || r.action)}</span>`;
-                                let desc = esc(r.title || '—');
-                                if (r.src === 'search' && r.extra && typeof r.extra === 'object') {
-                                        desc = `${esc(r.title || '—')} <span class="muted">(${esc(String(r.extra.n || 1))} تایپ — ${esc(String(r.extra.r || 0))} نتیجه)</span>`;
-                                }
-                                if (r.src === 'view' && r.extra && typeof r.extra === 'object') {
-                                        desc = `${esc(r.title || '—')}`;
-                                }
-                                if (r.src === 'change' && r.extra && r.extra.s) {
-                                        desc += ` <span class="muted">• منبع: ${esc(String(r.extra.s))}</span>`;
-                                }
-                                return `<tr ${svc ? `data-svc="${esc(String(svc))}" style="cursor:pointer" title="بازکردن صفحه سرویس"` : ''}>
-                                        <td style="white-space:nowrap">${actionChip}</td>
-                                        <td class="muted" style="white-space:nowrap">${esc(ACT_SRC_FA[r.src] || r.src)}</td>
-                                        <td>${esc(r.user_name || '')}</td>
-                                        <td class="num-cell">${svc ? '#' + esc(String(svc)) : '—'}</td>
-                                        <td>${desc}</td>
-                                        <td class="muted" style="white-space:nowrap">${fmtDate(r.ts)}</td>
-                                </tr>`;
-                        }).join('')}</tbody></table></div>
-                        <p class="muted">فیلتر فعلی: ${esc(actRangeLabel[activityState.range] || 'همه زمان‌ها')}${activityState.userId ? ' + کاربر خاص' : ''}${activityState.action ? ' + عملیات ' + esc(ACT_ACTION_FA[activityState.action] || activityState.action) : ''} — برای مشاهده سرویس روی ردیف کلیک کنید.</p></div>`;
+                // ۱.۲۵.۰ — گروه‌بندی بر اساس سرویس: هر سرویس یک کارت اختصاصی با سربرگ اطلاعات کامل؛
+                // ردیف‌های بدون سرویس (جستجو/سرویس حذف‌شده) به‌صورت فهرست ساده زیر کارت‌ها نمایش داده می‌شوند
+                const groups = [];
+                const gmap = {};
+                const loose = [];
+                rows.forEach((r) => {
+                        const sid = r.svc && parseInt(r.svc.id, 10) ? parseInt(r.svc.id, 10) : 0;
+                        if (!sid) { loose.push(r); return; }
+                        if (!gmap[sid]) { gmap[sid] = { sid: sid, svc: r.svc, rows: [] }; groups.push(gmap[sid]); }
+                        gmap[sid].rows.push(r);
+                });
+                const cards = groups.length ? '<div class="wr-acts">' + groups.map(actSvcCardHtml).join('') + '</div>' : '';
+                const looseHtml = loose.length
+                        ? '<div class="wr-acts"' + (groups.length ? ' style="margin-top:8px"' : '') + '>' + loose.map(actLooseRowHtml).join('') + '</div>'
+                        : '';
+                const looseNote = loose.length ? '<p class="muted" style="margin-top:6px">🔍 ردیف‌های «جستجو» سرویس مشخصی ندارند و به‌صورت فهرست ساده نمایش داده می‌شوند.</p>' : '';
+                return `<div class="card">
+                        ${cards}${looseHtml}${looseNote}
+                        <p class="muted">هر سرویس فقط یک‌بار با کارت اختصاصی نمایش داده می‌شود: سربرگ کارت مشخصات کامل سرویس (آدرس کامل، خیابان/بلوک، پلاک، واحد، دسته، تگ‌ها و آخرین وضعیت دایری) و بدنه کارت فهرست اقدامات است. فیلتر فعلی: ${esc(actRangeLabel[activityState.range] || 'همه زمان‌ها')}${activityState.userId ? ' + کاربر خاص' : ''}${activityState.action ? ' + عملیات ' + esc(ACT_ACTION_FA[activityState.action] || activityState.action) : ''} — برای مشاهده سرویس روی دکمه «مشاهده سرویس» کلیک کنید.</p></div>`;
         }
 
         function activityFiltersText(filters) {
