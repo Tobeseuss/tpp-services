@@ -1346,7 +1346,7 @@ html.tpp-embed .login-screen { min-height: 60vh; }
         .wr-svc-info { grid-template-columns: 1fr; }
 }
 
-/* ۱.۲۳.۰ — ردیف دکمه ذخیره در پایین هر بخش فرم سرویس (فیچر آزمایشی) */
+/* ۱.۲۳.۰ — ردیف دکمه ذخیره در پایین هر بخش فرم سرویس (از ۱.۲۴.۰ قطعی — تأیید کاربر) */
 .sec-save-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; border-top: 1px dashed var(--border); margin-top: 12px; padding-top: 10px; }
 .sec-save-row .muted { font-size: 12px; }
 

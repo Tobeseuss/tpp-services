@@ -577,7 +577,7 @@ TPP.app = (function () {
                 });
 
                 window.addEventListener('hashchange', route);
-                // ۱.۲۳.۰ — فیچر آزمایشی: میانبر Ctrl+S / ⌘S → ذخیره فرم سرویس (فقط وقتی صفحه سرویس باز است)
+                // ۱.۲۳.۰ — میانبر Ctrl+S / ⌘S → ذخیره فرم سرویس (فقط وقتی صفحه سرویس باز است — از ۱.۲۴.۰ قطعی، تأیید کاربر)
                 // e.code = KeyS مستقل از چیدمان کیبورد است (با کیبورد فارسی e.key = «س» می‌شود)
                 document.addEventListener('keydown', (e) => {
                         const k = String(e.key || '').toLowerCase();

@@ -145,7 +145,7 @@ TPP.views = TPP.views || {};
         }
 
         /** HTML کارت پیشرفت دایری — بالای اطلاعات اصلی (canEdit=false → فقط-مشاهده) */
-        /** ۱.۲۳.۰ — فیچر آزمایشی: ردیف دکمه ذخیره در پایین هر بخش فرم سرویس.
+        /** ۱.۲۳.۰ — ردیف دکمه ذخیره در پایین هر بخش فرم سرویس (از ۱.۲۴.۰ قطعی — تأیید کاربر).
          *  دکمه type="submit" داخل فرم است → همان جریان ذخیره کامل (saveService + اعتبارسنجی) اجرا می‌شود؛
          *  هدف: کاربر برای ذخیره مجبور به اسکرول تا انتهای صفحه نباشد. بازگشت: حذف فراخوانی‌های secSaveHtml. */
         function secSaveHtml() {
@@ -651,7 +651,7 @@ TPP.views = TPP.views || {};
                 }
 
                 document.getElementById('page-title').textContent = editing ? 'سرویس #' + (row && row.id) : 'ثبت سرویس جدید';
-                // ۱.۲۳.۰ — دسترسی ذخیره فرم برای دکمه‌های ذخیره بخش‌ها (فیچر آزمایشی)
+                // ۱.۲۳.۰ — دسترسی ذخیره فرم برای دکمه‌های ذخیره بخش‌ها (از ۱.۲۴.۰ قطعی — تأیید کاربر)
                 const canSaveForm = can(editing ? 'tpp_edit_services' : 'tpp_create_services');
 
                 document.getElementById('content').innerHTML = `
