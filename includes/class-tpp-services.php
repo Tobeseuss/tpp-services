@@ -550,9 +550,25 @@ class TPP_Services {
                 TPP_DB::delete( 'services', array( 'id' => (int) $id ) );
                 // حذف آبشاری تاریخچه این سرویس
                 $hist_deleted = TPP_History::delete_for_service( (int) $id );
+
+                // ۱.۲۸.۰ — اگر دیگر سرویسی روی این آدرس نمانده باشد، خود آدرس هم از دیتابیس حذف می‌شود (درخواست کاربر)
+                $address_id   = (int) ( $service['address_id'] ?? 0 );
+                $addr_deleted = 0;
+                if ( $address_id > 0 ) {
+                        $remaining = (int) TPP_DB::get_var(
+                                "SELECT COUNT(*) FROM " . TPP_DB::table( 'services' ) . " WHERE address_id = %d",
+                                array( $address_id )
+                        );
+                        if ( 0 === $remaining ) {
+                                // رکوردهای تاریخچه یتیم این آدرس (رویدادهای ایجاد/ویرایش آدرس) هم همراه آن پاک می‌شوند
+                                TPP_History::delete_for_address( $address_id );
+                                $addr_deleted = (int) TPP_DB::delete( 'addresses', array( 'id' => $address_id ) );
+                        }
+                }
+
                 // ۱.۲۰.۰ — سجل بازبینی: حذف توسط کاربر غیرمدیر با snapshot کامل
                 TPP_Review::track_delete( $service, $before_address, (int) $id, $user_id, $source );
-                $result = array( 'status' => 'deleted', 'id' => (int) $id, 'history_deleted' => (int) $hist_deleted );
+                $result = array( 'status' => 'deleted', 'id' => (int) $id, 'history_deleted' => (int) $hist_deleted, 'address_deleted' => ( $addr_deleted > 0 ) );
                 if ( ! empty( $args['op_id'] ) ) {
                         $this->log_op( $args['op_id'], $user_id, $result );
                 }

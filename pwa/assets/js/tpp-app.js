@@ -9,7 +9,7 @@ window.TPP = window.TPP || {};
 
 /** نسخه این کد — با نسخه‌ای که سرور در bootstrap می‌فرستد مقایسه می‌شود؛
  *  اگر فرق کنند یعنی پوسته قدیمی در مرورگر مانده و باید تازه شود. */
-TPP.VERSION = '1.27.0';
+TPP.VERSION = '1.28.0';
 
 /* ==================== ۱.۱۳.۰ — منطق آبشاری مراحل دایری (معادل سرور) ====================
    مراحل وابسته‌اند: تیک مرحله N همه مراحل قبل از N را خودکار تیک می‌زند؛
@@ -1873,7 +1873,7 @@ TPP.app = (function () {
                 if (bulkBtn) bulkBtn.addEventListener('click', async () => {
                         const ids = Array.from(searchState.selected).filter((id) => typeof id === 'number');
                         if (!ids.length) return;
-                        if (!await confirmBox(`حذف <b>${ids.length}</b> سرویس انتخاب‌شده؟<br><span class="muted">تاریخچه هر سرویس هم به‌صورت کامل حذف می‌شود و این عمل قابل بازگشت نیست.</span>`, 'حذف قطعی')) return;
+                        if (!await confirmBox(`حذف <b>${ids.length}</b> سرویس انتخاب‌شده؟<br><span class="muted">تاریخچه هر سرویس هم به‌صورت کامل حذف می‌شود و این عمل قابل بازگشت نیست. اگر سرویس دیگری روی آدرسی نمانده باشد، آن آدرس هم از دیتابیس حذف می‌شود.</span>`, 'حذف قطعی')) return;
                         bulkBtn.disabled = true;
                         for (const id of ids) {
                                 await TPP.offline.enqueue('service.delete', { id });

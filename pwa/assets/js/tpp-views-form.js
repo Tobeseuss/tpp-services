@@ -734,7 +734,7 @@ TPP.views = TPP.views || {};
 
                 const del = document.getElementById('delete-btn');
                 if (del) del.addEventListener('click', async () => {
-                        if (!await confirmBox('سرویس حذف شود؟ <br><span class="muted">تاریخچه این سرویس هم به‌صورت کامل حذف می‌شود و این عمل قابل بازگشت نیست.</span>', 'حذف سرویس')) return;
+                        if (!await confirmBox('سرویس حذف شود؟ <br><span class="muted">تاریخچه این سرویس هم به‌صورت کامل حذف می‌شود و این عمل قابل بازگشت نیست. اگر سرویس دیگری روی این آدرس ثبت نباشد، آدرس نیز از دیتابیس حذف می‌شود.</span>', 'حذف سرویس')) return;
                         Drafts.clearFor(true, row); // پیش‌نویس این فرم دیگر لازم نیست
                         await TPP.offline.enqueue('service.delete', { id: parseInt(params.id, 10) });
                         toast('سرویس به‌همراه تاریخچه آن حذف شد (در صف همگام‌سازی).', 'success');

@@ -286,6 +286,14 @@ class TPP_History {
                 );
         }
 
+        /** ۱.۲۸.۰ — حذف همه رکوردهای تاریخچه یک آدرس (همراه حذف آدرسی که دیگر هیچ سرویسی روی آن نمانده) */
+        public static function delete_for_address( $address_id ) {
+                return TPP_DB::query(
+                        "DELETE FROM " . TPP_DB::table( 'history' ) . " WHERE address_id = %d",
+                        array( (int) $address_id )
+                );
+        }
+
         /** بازگرداندن مقدار قبلی به‌عنوان بازبینی جدید (مدیر) */
         public static function restore( $history_id, $user_id ) {
                 $entry = TPP_DB::get_row( "SELECT * FROM " . TPP_DB::table( 'history' ) . " WHERE id = %d", array( (int) $history_id ) );
