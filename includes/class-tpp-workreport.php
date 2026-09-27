@@ -12,6 +12,12 @@
  *      - فعالیت ایجاد سرویس → «تحویل سرویس (آدرس کامل، …)، آخرین وضعیت پیشرفت دایری سرویس، اقدامات باقیمانده، خرابی اعلام شده»
  *   ۲) «افزودن دستی» — انتخاب سرویس (شناسه یا جستجو) + متن اقدام انجام شده → همان قالب ساخته می‌شود
  *   ۳) API مستقیم (POST workreport) — برای افزونه‌های دیگر
+ * ۱.۲۷.۰ — «افزودن ادغامی» (درخواست کاربر): همه اقدامات یک سرویس در یک روز (ایجاد/ویرایش/بازدید) با یک کلیک
+ *      به‌صورت «یک قلم واحد» مرتب بر اساس زمان اقدام ساخته می‌شود، مثلاً:
+ *      «تحویل سرویس و رفع مشکل و بررسی (آدرس کامل، …) ، دایری سرویس تا مرحله (X) ، مراحل باقیمانده … ، خرابی اعلام‌شده: Z»
+ *      نگاشت اقدام به عنوان: ایجاد → «تحویل سرویس»، بازدید → «بررسی»، سایر تغییرها → «رفع مشکل»؛
+ *      اقدامات هم‌نوع تکراری در متن ادغام می‌شوند. کلیدهای همه ردیف‌های مصرف‌شده (با کاما) در src_row ذخیره می‌شود
+ *      تا هم مخفی‌سازی ۱.۲۶.۰ کار کند و هم با حذف قلم، همه فعالیت‌ها دوباره ظاهر شوند.
  * اقلام هر روز قابل افزودن/ویرایش/حذف‌اند؛ مدیران می‌توانند گزارش همه کاربران را ببینند (کاربر فقط خودش را).
  */
 if ( ! defined( 'ABSPATH' ) ) {
@@ -112,11 +118,28 @@ class TPP_Workreport {
          * بخش‌های تهی (بدون خرابی / دایری کامل) حذف می‌شوند تا متن کوتاه و مرتب بماند.
          * $prefix: «رفع مشکل» یا «تحویل سرویس» یا متن اقدام انتخابی از فهرست/دلخواه (افزودن دستی)
          * خروجی: رشته یا WP_Error (سرویس یافت نشد)
+         * ۱.۲۷.۰ — بدنه مشترک به build_line_titles منتقل شد (افزودن ادغامی چند اقدام در یک قلم)
          */
         public static function build_line( $service_id, $prefix ) {
-                $service_id = (int) $service_id;
                 $prefix = trim( (string) $prefix );
                 if ( '' === $prefix ) {
+                        return new WP_Error( 'tpp_wr_prefix', 'عنوان اقدام خالی است.' );
+                }
+                return self::build_line_titles( $service_id, array( $prefix ) );
+        }
+
+        /**
+         * ۱.۲۷.۰ — متن قلم گزارش از چند عنوان اقدام (افزودن ادغامی):
+         *   «{عنوان ۱} و {عنوان ۲} و {عنوان ۳} (آدرس کامل، …) ، دایری سرویس تا مرحله (X) ، …»
+         * عناوین به ترتیب زمان اقدام مرتب و هم‌نوع‌های تکراری قبلاً ادغام شده‌اند (مسئولیت فراخواننده).
+         * اطلاعات سرویس (آدرس/دایری/مراحل باقیمانده/خرابی) چون برای همه اقدامات مشترک است فقط یک‌بار می‌آید.
+         */
+        public static function build_line_titles( $service_id, array $titles ) {
+                $service_id = (int) $service_id;
+                $titles = array_values( array_filter( array_map( 'trim', $titles ), static function ( $t ) {
+                        return '' !== $t;
+                } ) );
+                if ( ! $titles ) {
                         return new WP_Error( 'tpp_wr_prefix', 'عنوان اقدام خالی است.' );
                 }
                 $row = tpp()->services()->get( $service_id );
@@ -126,7 +149,7 @@ class TPP_Workreport {
                 $address = tpp()->services()->get_address( (int) $row['address_id'] );
                 $summary = TPP_Progress::summary( $row );
 
-                $parts = array( $prefix . ' (' . self::address_line( $address ) . ')' );
+                $parts = array( implode( ' و ', $titles ) . ' (' . self::address_line( $address ) . ')' );
                 $progress = self::progress_line( $summary );
                 if ( '' !== $progress ) {
                         $parts[] = $progress;
@@ -142,9 +165,20 @@ class TPP_Workreport {
                 return implode( ' ، ', $parts );
         }
 
-        /** پیشوند قالب بر اساس نوع فعالیت: ایجاد → «تحویل سرویس»، سایر (جستجو/مشاهده/ویرایش) → «رفع مشکل» */
+        /**
+         * عنوان اقدام در متن قلم بر اساس نوع فعالیت — از ۱.۲۷.۰:
+         *   ایجاد → «تحویل سرویس» | بازدید → «بررسی» | سایر تغییرها (ویرایش/حذف/ادغام/…) → «رفع مشکل»
+         * (سه عنوان متمایز برای ادغام، مطابق مثال کاربر: «تحویل سرویس … و رفع مشکل و بررسی …»)
+         */
         public static function prefix_for_action( $action ) {
-                return ( 'create' === sanitize_key( (string) $action ) ) ? 'تحویل سرویس' : 'رفع مشکل';
+                $action = sanitize_key( (string) $action );
+                if ( 'create' === $action ) {
+                        return 'تحویل سرویس';
+                }
+                if ( 'view' === $action ) {
+                        return 'بررسی';
+                }
+                return 'رفع مشکل';
         }
 
         /* ---------------------------------------------------------------------
@@ -373,7 +407,8 @@ class TPP_Workreport {
         /**
          * افزودن قلم از روی ردیف تاریخچه/فعالیت روز:
          * $src: 'view' (بازدید) | 'change' (تغییر) — $row_id: شناسه رکورد همان جدول
-         * خط تولیدی طبق قالب build_line با پیشوند create→«تحویل سرویس» و غیر آن→«رفع مشکل»
+         * خط تولیدی طبق قالب build_line با عنوان create→«تحویل سرویس»، view→«بررسی» و غیر آن→«رفع مشکل»
+         * (۱.۲۷.۰ — مسیر کلاینت به add_service_day منتقل شد؛ این متد برای سازگاری API تک‌ردیفی باقی است)
          */
         public static function add_from_activity( $user_id, $src, $row_id, $date = '' ) {
                 $user_id = (int) $user_id;
@@ -397,10 +432,10 @@ class TPP_Workreport {
                         $action = sanitize_key( (string) $row['action'] );
                 }
                 // ۱.۲۶.۰ — هر ردیف فعالیت فقط یک‌بار به گزارش تبدیل می‌شود (جلوگیری از قلم تکراری)
+                // ۱.۲۷.۰ — بررسی با مجموعه کلیدهای مصرف‌شده (src_row می‌تواند چندکلیدی باشد)
                 $src_row = $src . ':' . $row_id;
-                $w = TPP_DB::table( 'work_reports' );
-                $dup = (int) TPP_DB::get_var( "SELECT id FROM {$w} WHERE user_id = %d AND src_row = %s LIMIT 1", array( $user_id, $src_row ) );
-                if ( $dup ) {
+                $consumed = self::consumed_keys( $user_id );
+                if ( isset( $consumed[ $src_row ] ) ) {
                         return new WP_Error( 'tpp_wr_activity_added', 'این فعالیت قبلاً به گزارش کار اضافه شده است.' );
                 }
                 $prefix = self::prefix_for_action( $action );
@@ -413,6 +448,127 @@ class TPP_Workreport {
                         return $id;
                 }
                 return self::shape_item( self::get_item( $id ) );
+        }
+
+        /**
+         * ۱.۲۷.۰ — افزودن ادغامی همه اقدامات یک سرویس در یک روز به گزارش کار (درخواست کاربر):
+         * یک کلیک روی «افزودن به گزارش کار» باید «تمام» اقدامات آن سرویس (ایجاد/ویرایش/بازدید/…)
+         * را به‌صورت «یک قلم واحد» مرتب بر اساس زمان اقدام به گزارش اضافه کند، مثلاً:
+         *   «تحویل سرویس و رفع مشکل و بررسی (آدرس…) ، دایری سرویس تا مرحله (X) ، …»
+         * ردیف‌های قبلاً-مصرف‌شده (اقلام قبلی گزارش) نادیده گرفته می‌شوند؛ اگر چیزی باقی نماند خطا برمی‌گردد.
+         * کلیدهای همه ردیف‌های مصرف‌شده با کاما در src_row قلم جدید ذخیره می‌شود (مخفی‌سازی ۱.۲۶.۰ + بازگشت با حذف قلم).
+         * خروجی: {status, item, count, titles, service_id, date} یا WP_Error
+         */
+        public static function add_service_day( $user_id, $service_id, $date = '' ) {
+                $user_id = (int) $user_id;
+                $service_id = (int) $service_id;
+                if ( $user_id <= 0 ) {
+                        return new WP_Error( 'tpp_wr_user', 'کاربر نامعتبر است.' );
+                }
+                if ( $service_id <= 0 || ! tpp()->services()->get( $service_id ) ) {
+                        return new WP_Error( 'tpp_wr_service', 'سرویس یافت نشد.' );
+                }
+                $date = self::norm_date( $date );
+                if ( '' === $date ) {
+                        $date = TPP_Date::today();
+                }
+                $from = $date . ' 00:00:00';
+                $to   = $date . ' 23:59:59';
+                $h = TPP_DB::table( 'history' );
+                $v = TPP_DB::table( 'view_log' );
+                // همه اقدامات تغییر سرویس در این روز (همان پنجره روز فید گزارش کار)
+                $changes = (array) TPP_DB::get_results(
+                        "SELECT id, action, changed_at AS ts FROM {$h} WHERE user_id = %d AND entity = 'service' AND entity_id = %d AND changed_at >= %s AND changed_at <= %s ORDER BY changed_at ASC, id ASC",
+                        array( $user_id, $service_id, $from, $to )
+                );
+                // همه جلسات بازدید همین روز (هر جلسه ردیف مستقل view_log است)
+                $views = (array) TPP_DB::get_results(
+                        "SELECT id, 'view' AS action, last_at AS ts FROM {$v} WHERE user_id = %d AND entity = 'service' AND entity_id = %d AND last_at >= %s AND last_at <= %s ORDER BY last_at ASC, id ASC",
+                        array( $user_id, $service_id, $from, $to )
+                );
+                $rows = array();
+                foreach ( $changes as $c ) {
+                        $rows[] = array( 'key' => 'change:' . (int) $c['id'], 'action' => sanitize_key( (string) $c['action'] ), 'ts' => (string) $c['ts'] );
+                }
+                foreach ( $views as $w ) {
+                        $rows[] = array( 'key' => 'view:' . (int) $w['id'], 'action' => 'view', 'ts' => (string) $w['ts'] );
+                }
+                if ( ! $rows ) {
+                        return new WP_Error( 'tpp_wr_activity_none', 'برای این سرویس در این روز اقدامی ثبت نشده است.' );
+                }
+                // مرتب‌سازی زمانی صعودی (بر حسب زمان اقدام) — ts رشته Y-m-d H:i:s است و مقایسه متنی کافی است
+                usort( $rows, static function ( $a, $b ) {
+                        if ( $a['ts'] === $b['ts'] ) {
+                                return strcmp( $a['key'], $b['key'] );
+                        }
+                        return strcmp( $a['ts'], $b['ts'] );
+                } );
+                // حذف ردیف‌های قبلاً-مصرف‌شده (اقلام قبلی گزارش کار)
+                $consumed = self::consumed_keys( $user_id );
+                $rows = array_values( array_filter( $rows, static function ( $r ) use ( $consumed ) {
+                        return ! isset( $consumed[ $r['key'] ] );
+                } ) );
+                if ( ! $rows ) {
+                        return new WP_Error( 'tpp_wr_activity_added', 'همه اقدامات این سرویس در این روز قبلاً به گزارش کار اضافه شده است.' );
+                }
+                // عناوین اقدامات به ترتیب زمان اقدام — اقدام هم‌نوع تکراری در متن ادغام می‌شود
+                $titles = array();
+                foreach ( $rows as $r ) {
+                        $t = self::prefix_for_action( $r['action'] );
+                        if ( ! in_array( $t, $titles, true ) ) {
+                                $titles[] = $t;
+                        }
+                }
+                $line = self::build_line_titles( $service_id, $titles );
+                if ( is_wp_error( $line ) ) {
+                        return $line;
+                }
+                $keys = array();
+                foreach ( $rows as $r ) {
+                        $keys[] = $r['key'];
+                }
+                $src_row = self::norm_src_row( implode( ',', $keys ) );
+                if ( '' === $src_row ) {
+                        return new WP_Error( 'tpp_wr_activity', 'کلید ردیف فعالیت نامعتبر است.' );
+                }
+                $id = self::add( $user_id, $date, $line, $service_id, $src_row );
+                if ( is_wp_error( $id ) ) {
+                        return $id;
+                }
+                return array(
+                        'status'     => 'added',
+                        'item'       => self::shape_item( self::get_item( $id ) ),
+                        'count'      => count( $rows ),
+                        'titles'     => $titles,
+                        'service_id' => $service_id,
+                        'date'       => $date,
+                );
+        }
+
+        /**
+         * ۱.۲۷.۰ — مجموعه کلیدهای فعالیت مصرف‌شده کاربر (برای گارد تکراری + علامت‌گذاری فید).
+         * src_row قلم می‌تواند تک‌کلیدی («change:12») یا چندکلیدی («change:12,view:34») باشد؛ هر دو پشتیبانی می‌شوند.
+         * خروجی: آرایه انجمنی کلید => true
+         */
+        public static function consumed_keys( $user_id ) {
+                $table = TPP_DB::table( 'work_reports' );
+                if ( ! $table ) {
+                        return array();
+                }
+                $rows = (array) TPP_DB::get_results(
+                        "SELECT src_row FROM {$table} WHERE user_id = %d AND src_row IS NOT NULL AND src_row <> '' ORDER BY id DESC LIMIT 2000",
+                        array( (int) $user_id )
+                );
+                $set = array();
+                foreach ( $rows as $r ) {
+                        foreach ( explode( ',', (string) $r['src_row'] ) as $k ) {
+                                $k = trim( $k );
+                                if ( '' !== $k ) {
+                                        $set[ $k ] = true;
+                                }
+                        }
+                }
+                return $set;
         }
 
         /* ---------------------------------------------------------------------
@@ -433,7 +589,7 @@ class TPP_Workreport {
                         user_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
                         report_date DATE NOT NULL,
                         service_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
-                        src_row VARCHAR(64) NULL,
+                        src_row TEXT NULL,
                         content LONGTEXT NULL,
                         sort INT UNSIGNED NOT NULL DEFAULT 0,
                         created_at DATETIME NULL,
@@ -456,22 +612,38 @@ class TPP_Workreport {
                 }
         }
 
-        /** ۱.۲۶.۰ — ستون src_row (ردیف فعالیت مبدأ قلم) روی نصب‌های موجود */
+        /** ۱.۲۶.۰ — ستون src_row (ردیف فعالیت مبدأ قلم) روی نصب‌های موجود
+         * ۱.۲۷.۰ — عریض‌سازی به TEXT برای ذخیره چند کلید (ادغام همه اقدامات یک سرویس در یک قلم) */
         public static function ensure_src_row_column() {
                 $table = TPP_DB::table( 'work_reports' );
                 if ( ! $table ) {
                         return;
                 }
-                TPP_Fields::ensure_column( $table, 'src_row', 'VARCHAR(64) NULL' );
+                TPP_Fields::ensure_column( $table, 'src_row', 'TEXT NULL' );
+                $col = TPP_DB::get_row( "SHOW COLUMNS FROM {$table} LIKE %s", array( 'src_row' ) );
+                if ( $col && false === stripos( (string) ( $col['Type'] ?? '' ), 'text' ) ) {
+                        TPP_DB::query( "ALTER TABLE {$table} MODIFY src_row TEXT NULL" );
+                }
         }
 
-        /** کلید ردیف مبدأ (۱.۲۶.۰) — «change:123» یا «view:45»؛ خروجی: کلید معتبر یا '' */
+        /** کلید(های) ردیف مبدأ — تک‌کلیدی «change:123» (۱.۲۶.۰) یا چندکلیدی با کاما «change:123,view:45» (۱.۲۷.۰)
+         * خروجی: رشته نرمال‌شده (بدون تکرار، حداکثر ۱۰۰ کلید) یا '' */
         public static function norm_src_row( $src_row ) {
                 $src_row = trim( (string) $src_row );
-                if ( ! preg_match( '/^(change|view):\d{1,15}$/', $src_row ) ) {
+                if ( '' === $src_row ) {
                         return '';
                 }
-                return $src_row;
+                $out = array();
+                foreach ( explode( ',', $src_row ) as $k ) {
+                        $k = trim( (string) $k );
+                        if ( $k && preg_match( '/^(change|view):\d{1,15}$/', $k ) && ! in_array( $k, $out, true ) ) {
+                                $out[] = $k;
+                        }
+                }
+                if ( count( $out ) > 100 ) {
+                        $out = array_slice( $out, 0, 100 );
+                }
+                return $out ? implode( ',', $out ) : '';
         }
 
         /**

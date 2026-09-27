@@ -649,36 +649,19 @@ class TPP_Activity {
         }
 
         /** علامت‌گذاری ردیف‌های فید که قبلاً به قلم گزارش کار همان کاربر تبدیل شده‌اند (۱.۲۶.۰)
-         * کلید مبدأ روی قلم گزارش ذخیره می‌شود («change:123»/«view:45»)؛ با حذف قلم، علامت خودبه‌خود برداشته می‌شود */
+         * ۱.۲۷.۰ — یک قلم ادغامی می‌تواند چند ردیف را مصرف کرده باشد (src_row چندکلیدی با کاما)؛
+         * کلیدهای مصرف‌شده از TPP_Workreport::consumed_keys خوانده می‌شود؛ با حذف قلم، علامت خودبه‌خود برداشته می‌شود */
         private static function annotate_report_added( array &$rows, $user_id ) {
-                $w = TPP_DB::table( 'work_reports' );
-                if ( ! $w || empty( $rows ) ) {
+                if ( empty( $rows ) ) {
                         return;
                 }
-                $keys = array();
-                foreach ( $rows as $r ) {
-                        $src = (string) $r['src'];
-                        if ( 'change' === $src || 'view' === $src ) {
-                                $keys[ $src . ':' . (int) $r['id'] ] = true;
-                        }
-                }
-                if ( ! $keys ) {
+                $consumed = TPP_Workreport::consumed_keys( $user_id );
+                if ( ! $consumed ) {
                         return;
-                }
-                $placeholders = implode( ',', array_fill( 0, count( $keys ), '%s' ) );
-                $params = array_merge( array( (int) $user_id ), array_keys( $keys ) );
-                $found = TPP_DB::get_results( "SELECT DISTINCT src_row FROM {$w} WHERE user_id = %d AND src_row IN ({$placeholders})", $params );
-                if ( ! $found ) {
-                        return;
-                }
-                $map = array();
-                foreach ( (array) $found as $f ) {
-                        $map[ (string) $f['src_row'] ] = true;
                 }
                 foreach ( $rows as &$r ) {
                         $src = (string) $r['src'];
-                        $key = ( ( 'change' === $src || 'view' === $src ) ? $src . ':' . (int) $r['id'] : '' );
-                        if ( $key && isset( $map[ $key ] ) ) {
+                        if ( ( 'change' === $src || 'view' === $src ) && isset( $consumed[ $src . ':' . (int) $r['id'] ] ) ) {
                                 $r['added'] = true;
                         }
                 }

@@ -772,7 +772,7 @@ TPP.views = TPP.views || {};
                 card.innerHTML = `
                 <div class="card">
                         <h3>🕘 فعالیت‌های این روز ${self ? '' : '(' + esc(wr.data.user_name || '') + ')'}</h3>
-                        <p class="muted">تغییر / بازدید / ایجاد و پیامک‌های همین روز (جستجوها نمایش داده نمی‌شوند) — هر سرویس فقط یک‌بار با کارت اختصاصی نمایش داده می‌شود: سربرگ کارت مشخصات کامل سرویس (آدرس کامل، خیابان/بلوک، پلاک، واحد، دسته، تگ‌ها و آخرین وضعیت دایری) و بدنه کارت فهرست اقدامات همان روز است؛ دکمه «➕» خط استاندارد همان سرویس را به گزارش کار اضافه می‌کند (ایجاد → «تحویل سرویس»، سایر → «رفع مشکل»). فعالیت‌هایی که به گزارش کار اضافه شده‌اند از این فهرست حذف می‌شوند و فقط اقدامات باقی‌مانده نمایش داده می‌شوند.</p>
+                        <p class="muted">تغییر / بازدید / ایجاد و پیامک‌های همین روز (جستجوها نمایش داده نمی‌شوند) — هر سرویس فقط یک‌بار با کارت اختصاصی نمایش داده می‌شود: سربرگ کارت مشخصات کامل سرویس (آدرس کامل، خیابان/بلوک، پلاک، واحد، دسته، تگ‌ها و آخرین وضعیت دایری) و بدنه کارت فهرست اقدامات همان روز است؛ دکمه «➕» همه اقدامات همان روز سرویس را به‌صورت «یک قلم ادغام‌شده» مرتب بر اساس زمان اقدام به گزارش کار اضافه می‌کند (مثلاً «تحویل سرویس و رفع مشکل و بررسی»). فعالیت‌هایی که به گزارش کار اضافه شده‌اند از این فهرست حذف می‌شوند و فقط اقدامات باقی‌مانده نمایش داده می‌شوند.</p>
                         ${body}${addedNote}${older}
                 </div>`;
 
@@ -838,7 +838,7 @@ TPP.views = TPP.views || {};
                                 ${svcInfoHtml(svc)}
                         </div>
                         <div class="wr-svc-acts">${g.rows.map(actLineHtml).join('')}</div>
-                        ${canAdd ? '<div class="wr-svc-foot"><button class="btn btn-sm btn-primary wr-act-add" data-wr-addg="' + esc(String(g.sid)) + '" title="افزودن خط استاندارد این سرویس به گزارش کار (ایجاد → تحویل سرویس، سایر → رفع مشکل)">➕ افزودن به گزارش کار</button><span class="muted">' + faNum(addable.length) + ' اقدام قابل ثبت</span></div>' : ''}
+                        ${canAdd ? '<div class="wr-svc-foot"><button class="btn btn-sm btn-primary wr-act-add" data-wr-addg="' + esc(String(g.sid)) + '" title="افزودن همه اقدامات این سرویس به گزارش کار به‌صورت یک قلم ادغام‌شده و مرتب بر اساس زمان اقدام (ایجاد → تحویل سرویس، بازدید → بررسی، ویرایش → رفع مشکل)">➕ افزودن به گزارش کار</button><span class="muted">' + faNum(addable.length) + ' اقدام — همه با یک کلیک افزوده می‌شوند</span></div>' : ''}
                 </div>`;
         }
 
@@ -865,37 +865,32 @@ TPP.views = TPP.views || {};
         }
 
         /**
-         * افزودن فعالیت‌های یک سرویس به گزارش کار — هر «نوع خط» فقط یک‌بار:
-         * جدیدترین ردیف «ایجاد» → خط «تحویل سرویس» + جدیدترین ردیف دیگر (بازدید/ویرایش/…) → خط «رفع مشکل».
-         * (خطوط در سرور از وضعیت فعلی سرویس ساخته می‌شوند؛ افزودن تک‌تک ردیف‌ها خط تکراری می‌ساخت)
+         * افزودن همه اقدامات یک سرویس به گزارش کار — ۱.۲۷.۰ (درخواست کاربر):
+         * یک کلیک، «تمام» اقدامات آن روزِ سرویس (ایجاد/ویرایش/بازدید/…) را به‌صورت «یک قلم ادغام‌شده»
+         * مرتب بر اساس زمان اقدام به گزارش اضافه می‌کند، مثل «تحویل سرویس و رفع مشکل و بررسی (آدرس…) ، دایری …».
+         * سرور خودش اقدامات روز را از تاریخچه/بازدید می‌خواند (شامل ردیف‌های خارج از صفحه فید)؛
+         * اقداماتی که قبلاً تبدیل شده‌اند نادیده گرفته می‌شوند و در فید مخفی می‌مانند (۱.۲۶.۰).
          */
         async function addServiceToReport(g) {
                 if (!canEdit()) { toast('این گزارش متعلق به شما نیست.', 'warn'); return; }
                 const addable = g.rows.filter((r) => r.src === 'change' || r.src === 'view');
                 if (!addable.length) return;
-                const isCreate = (r) => r.src === 'change' && r.action === 'create';
-                const reps = [];
-                const created = addable.find(isCreate);          // ردیف‌ها بر اساس زمان نزولی‌اند → اولین = جدیدترین
-                const other = addable.find((r) => !isCreate(r));
-                if (created) reps.push(created);
-                if (other) reps.push(other);
-                let ok = 0, lastErr = '';
-                for (const r of reps) {
-                        try {
-                                await TPP.api.request('POST', 'workreport/from_activity', {
-                                        src: r.src === 'view' ? 'view' : 'change',
-                                        row_id: r.id,
-                                        date: wr.date
-                                });
-                                ok++;
-                        } catch (e) { lastErr = e.message; }
+                let res = null;
+                try {
+                        res = await TPP.api.request('POST', 'workreport/from_activity_group', {
+                                service_id: g.sid,
+                                date: wr.date
+                        });
+                } catch (e) {
+                        toast('خطا در افزودن: ' + esc(e.message || 'نامشخص'), 'error', 7000);
+                        return;
                 }
-                if (ok) {
-                        toast(ok > 1 ? '✅ ' + faNum(ok) + ' قلم به گزارش کار ' + esc(jal(wr.date)) + ' اضافه شد.' : '✅ به گزارش کار ' + esc(jal(wr.date)) + ' اضافه شد.', 'success', 5000);
-                        loadDay();
-                } else {
-                        toast('خطا در افزودن: ' + esc(lastErr || 'نامشخص'), 'error', 7000);
-                }
+                const n = res && parseInt(res.count, 10) ? parseInt(res.count, 10) : addable.length;
+                const where = esc(jal(wr.date));
+                toast(n > 1
+                        ? '✅ ' + faNum(n) + ' اقدام این سرویس به‌صورت یک قلم ادغام‌شده (به ترتیب زمان اقدام) به گزارش کار ' + where + ' اضافه شد.'
+                        : '✅ به گزارش کار ' + where + ' اضافه شد.', 'success', 5000);
+                loadDay();
         }
 
         /* ============================================================

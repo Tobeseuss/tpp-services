@@ -232,6 +232,8 @@ class TPP_Rest {
                                 'POST' => array( 'perm' => 'perm_access', 'cb' => 'workreport_add' ),
                         ),
                         'workreport/from_activity' => array( 'POST' => array( 'perm' => 'perm_access', 'cb' => 'workreport_add_activity' ) ),
+                        /* ۱.۲۷.۰ — افزودن ادغامی همه اقدامات یک سرویس در یک روز (یک قلم واحد مرتب بر اساس زمان اقدام) */
+                        'workreport/from_activity_group' => array( 'POST' => array( 'perm' => 'perm_access', 'cb' => 'workreport_add_activity_group' ) ),
                         'workreport/line'          => array( 'POST' => array( 'perm' => 'perm_access', 'cb' => 'workreport_line' ) ),
                         'workreport/(?P<id>\d+)'   => array(
                                 'PUT'    => array( 'perm' => 'perm_access', 'cb' => 'workreport_update' ),
@@ -1090,6 +1092,26 @@ class TPP_Rest {
                         return self::err( $item->get_error_code(), $item->get_error_message(), 400 );
                 }
                 return self::ok( array( 'status' => 'added', 'item' => $item ), 201 );
+        }
+
+        /** POST workreport/from_activity_group {service_id, date} — ۱.۲۷.۰ افزودن ادغامی همه اقدامات یک سرویس در یک روز
+         * همه اقدامات (ایجاد/ویرایش/بازدید) آن سرویس در همان روز با یک فراخوانی به‌صورت «یک قلم واحد»
+         * مرتب بر اساس زمان اقدام ساخته و ثبت می‌شود؛ ردیف‌های قبلاً-مصرف‌شده نادیده گرفته می‌شوند. */
+        public function workreport_add_activity_group( WP_REST_Request $request ) {
+                $body = (array) $request->get_json_params();
+                if ( empty( $body ) ) {
+                        $body = $request->get_params();
+                }
+                $user_id = get_current_user_id();
+                $res = TPP_Workreport::add_service_day(
+                        $user_id,
+                        isset( $body['service_id'] ) ? (int) $body['service_id'] : 0,
+                        isset( $body['date'] ) ? (string) $body['date'] : ''
+                );
+                if ( is_wp_error( $res ) ) {
+                        return self::err( $res->get_error_code(), $res->get_error_message(), 400 );
+                }
+                return self::ok( $res, 201 );
         }
 
         /** POST workreport/line {service_id, prefix} — فقط ساخت متن قالب (پیش‌نمایش؛ چیزی ثبت نمی‌شود) */
@@ -2347,11 +2369,15 @@ class TPP_Rest {
                                         $arg( 'service_id', 'int', 'شناسه سرویس مرتبط (اختیاری)' ),
                                         $arg( 'prefix', 'string', 'عنوان اقدام مثل «رفع مشکل» / «تحویل سرویس» / متن دلخواه' ),
                                 ), array( 'date' => '2026-06-12', 'service_id' => 12, 'prefix' => 'رفع مشکل' ) ),
-                                $ep( 'POST', 'workreport/from_activity', 'افزودن از تاریخچه فعالیت', 'تبدیل یک ردیف فعالیت روز (بازدید یا تغییر سرویس) به قلم گزارش با قالب استاندارد: ردیف view → «رفع مشکل …»، ردیف change با action=create → «تحویل سرویس …»، سایر تغییرها → «رفع مشکل …».', 'کاربر افزونه', array(
+                                $ep( 'POST', 'workreport/from_activity', 'افزودن از تاریخچه فعالیت', 'تبدیل یک ردیف فعالیت روز (بازدید یا تغییر سرویس) به قلم گزارش با قالب استاندارد: ردیف change با action=create → «تحویل سرویس …»، ردیف view → «بررسی …»، سایر تغییرها → «رفع مشکل …». برای افزودن همه اقدامات یک سرویس در یک قلم، from_activity_group را ببینید.', 'کاربر افزونه', array(
                                         $arg( 'src', 'string', 'view | change' ),
                                         $arg( 'row_id', 'int', 'شناسه رکورد همان جدول (بازدید/تاریخچه)' ),
                                         $arg( 'date', 'date', 'روز گزارش (پیش‌فرض امروز)' ),
                                 ), array( 'src' => 'change', 'row_id' => 345, 'date' => '2026-06-12' ) ),
+                                $ep( 'POST', 'workreport/from_activity_group', 'افزودن ادغامی اقدامات یک سرویس (۱.۲۷.۰)', 'با یک فراخوانی، همه اقدامات ثبت‌شده کاربر روی یک سرویس در روز مشخص (ایجاد/ویرایش/بازدید/…) به‌صورت «یک قلم واحد» مرتب بر اساس زمان اقدام به گزارش کار اضافه می‌شود: «تحویل سرویس و رفع مشکل و بررسی (آدرس کامل، …) ، دایری سرویس تا مرحله (X) ، مراحل باقیمانده … ، خرابی اعلام‌شده: Z». اقدامات هم‌نوع تکراری در متن ادغام می‌شوند؛ ردیف‌هایی که قبلاً به قلم دیگری تبدیل شده‌اند نادیده گرفته می‌شوند و اگر همه قبلاً اضافه شده باشند خطا برمی‌گردد. کلیدهای ردیف‌های مصرف‌شده در src_row قلم ذخیره می‌شود (مخفی‌سازی در فید گزارش کار + بازگشت با حذف قلم).', 'کاربر افزونه', array(
+                                        $arg( 'service_id', 'int', 'شناسه سرویس' ),
+                                        $arg( 'date', 'date', 'روز گزارش (پیش‌فرض امروز)' ),
+                                ), array( 'service_id' => 12, 'date' => '2026-06-12' ) ),
                                 $ep( 'POST', 'workreport/line', 'پیش‌نمایش متن قلم', 'ساخت متن قالب برای یک سرویس بدون ثبت — برای پیش‌نمایش قبل از افزودن.', 'کاربر افزونه', array(
                                         $arg( 'service_id', 'int', 'شناسه سرویس' ),
                                         $arg( 'prefix', 'string', 'عنوان اقدام' ),
