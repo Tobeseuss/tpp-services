@@ -14,10 +14,12 @@
  *   ۳) API مستقیم (POST workreport) — برای افزونه‌های دیگر
  * ۱.۲۷.۰ — «افزودن ادغامی» (درخواست کاربر): همه اقدامات یک سرویس در یک روز (ایجاد/ویرایش/بازدید) با یک کلیک
  *      به‌صورت «یک قلم واحد» مرتب بر اساس زمان اقدام ساخته می‌شود، مثلاً:
- *      «تحویل سرویس و رفع مشکل و بررسی (آدرس کامل، …) ، دایری سرویس تا مرحله (X) ، مراحل باقیمانده … ، خرابی اعلام‌شده: Z»
+ *      «تحویل سرویس و رفع مشکل و بررسی (آدرس کامل، …) ، دایری سرویس تا مرحله (X) ، خرابی اعلام‌شده: Z»
  *      نگاشت اقدام به عنوان: ایجاد → «تحویل سرویس»، بازدید → «بررسی»، سایر تغییرها → «رفع مشکل»؛
  *      اقدامات هم‌نوع تکراری در متن ادغام می‌شوند. کلیدهای همه ردیف‌های مصرف‌شده (با کاما) در src_row ذخیره می‌شود
  *      تا هم مخفی‌سازی ۱.۲۶.۰ کار کند و هم با حذف قلم، همه فعالیت‌ها دوباره ظاهر شوند.
+ * ۱.۳۰.۰ — «مراحل باقیمانده بعدی از مرحله (Y)» از متن قلم حذف شد (درخواست کاربر: متن گزارش خیلی طولانی بود)
+ *      و دسته‌بندی سرویس هر قلم در پاسخ day/range ضمیمه می‌شود تا گزارش بر اساس دسته‌بندی گروه‌بندی شود.
  * اقلام هر روز قابل افزودن/ویرایش/حذف‌اند؛ مدیران می‌توانند گزارش همه کاربران را ببینند (کاربر فقط خودش را).
  */
 if ( ! defined( 'ABSPATH' ) ) {
@@ -87,21 +89,6 @@ class TPP_Workreport {
                 return 'دایری سرویس شروع نشده است';
         }
 
-        /** «مراحل باقیمانده بعدی از مرحله (Y)» — Y = نخستین مرحله انجام‌نشده (به‌جز ردشده‌های کاربر)؛ خالی = چیزی نمانده */
-        private static function remaining_line( $summary ) {
-                if ( ! is_array( $summary ) ) {
-                        return '';
-                }
-                $steps    = (array) ( $summary['steps'] ?? array() );
-                $excluded = (array) ( $summary['excluded'] ?? array() );
-                foreach ( array_keys( TPP_Progress::steps() ) as $k ) {
-                        if ( ! in_array( $k, $steps, true ) && ! in_array( $k, $excluded, true ) ) {
-                                return 'مراحل باقیمانده بعدی از مرحله (' . TPP_Progress::step_label( $k ) . ')';
-                        }
-                }
-                return '';
-        }
-
         /** «خرابی اعلام‌شده» — برچسب خرابی‌های فعلی (۱.۱۴.۰: چندتایی)؛ خالی وقتی خرابی نیست (متن ساده‌تر ۱.۱۹.۰) */
         private static function failure_line( $summary ) {
                 if ( ! is_array( $summary ) ) {
@@ -113,8 +100,8 @@ class TPP_Workreport {
         }
 
         /**
-         * متن قلم گزارش برای یک سرویس — قالب ساده‌شده ۱.۱۹.۰ (درخواست کاربر: بدون شمارش مراحل):
-         *   «{پیشوند} (آدرس کامل، نام خیابان یا بلوک، شماره پلاک، شماره واحد) ، دایری سرویس تا مرحله (X) ، مراحل باقیمانده بعدی از مرحله (Y) ، خرابی اعلام‌شده: Z»
+         * متن قلم گزارش برای یک سرویس — قالب ساده ۱.۱۹.۰ + حذف «مراحل باقیمانده» در ۱.۳۰.۰ (درخواست کاربر):
+         *   «{پیشوند} (آدرس کامل، نام خیابان یا بلوک، شماره پلاک، شماره واحد) ، دایری سرویس تا مرحله (X) ، خرابی اعلام‌شده: Z»
          * بخش‌های تهی (بدون خرابی / دایری کامل) حذف می‌شوند تا متن کوتاه و مرتب بماند.
          * $prefix: «رفع مشکل» یا «تحویل سرویس» یا متن اقدام انتخابی از فهرست/دلخواه (افزودن دستی)
          * خروجی: رشته یا WP_Error (سرویس یافت نشد)
@@ -132,7 +119,8 @@ class TPP_Workreport {
          * ۱.۲۷.۰ — متن قلم گزارش از چند عنوان اقدام (افزودن ادغامی):
          *   «{عنوان ۱} و {عنوان ۲} و {عنوان ۳} (آدرس کامل، …) ، دایری سرویس تا مرحله (X) ، …»
          * عناوین به ترتیب زمان اقدام مرتب و هم‌نوع‌های تکراری قبلاً ادغام شده‌اند (مسئولیت فراخواننده).
-         * اطلاعات سرویس (آدرس/دایری/مراحل باقیمانده/خرابی) چون برای همه اقدامات مشترک است فقط یک‌بار می‌آید.
+         * اطلاعات سرویس (آدرس/دایری/خرابی) چون برای همه اقدامات مشترک است فقط یک‌بار می‌آید.
+         * ۱.۳۰.۰ — بخش «مراحل باقیمانده بعدی از مرحله (Y)» از متن حذف شد (متن کوتاه‌تر).
          */
         public static function build_line_titles( $service_id, array $titles ) {
                 $service_id = (int) $service_id;
@@ -153,10 +141,6 @@ class TPP_Workreport {
                 $progress = self::progress_line( $summary );
                 if ( '' !== $progress ) {
                         $parts[] = $progress;
-                }
-                $remaining = self::remaining_line( $summary );
-                if ( '' !== $remaining ) {
-                        $parts[] = $remaining;
                 }
                 $failure = self::failure_line( $summary );
                 if ( '' !== $failure ) {
@@ -271,8 +255,49 @@ class TPP_Workreport {
         }
 
         /**
+         * ۱.۳۰.۰ — دسته‌بندی سرویسِ هر قلم (batch — یک کوئری) برای گروه‌بندی گزارش بر اساس دسته‌بندی.
+         * خروجی: [service_id => ['id' => , 'label' => ]] — اقلام بدون سرویس/بدون دسته در کلاینت «بدون دسته‌بندی» می‌شوند.
+         */
+        private static function categories_for_items( array $items ) {
+                $ids = array();
+                foreach ( $items as $it ) {
+                        $sid = (int) ( $it['service_id'] ?? 0 );
+                        if ( $sid > 0 ) {
+                                $ids[ $sid ] = true;
+                        }
+                }
+                $map = array();
+                if ( $ids ) {
+                        $in = implode( ',', array_map( 'intval', array_keys( $ids ) ) );
+                        $st = TPP_DB::table( 'services' );
+                        foreach ( (array) TPP_DB::get_results( "SELECT id, category_id FROM {$st} WHERE id IN ({$in})" ) as $s ) {
+                                $cid = (int) ( $s['category_id'] ?? 0 );
+                                if ( $cid > 0 ) {
+                                        $label = TPP_Categories::label_of( $cid );
+                                        if ( '' !== $label ) {
+                                                $map[ (int) $s['id'] ] = array( 'id' => $cid, 'label' => $label );
+                                        }
+                                }
+                        }
+                }
+                return $map;
+        }
+
+        /** دسته‌بندی را به اقلام تولیدشده با shape_item ضمیمه می‌کند (۱.۳۰.۰) */
+        private static function attach_categories( array $items ) {
+                $cats = self::categories_for_items( $items );
+                foreach ( $items as &$it ) {
+                        $sid = (int) ( $it['service_id'] ?? 0 );
+                        $it['category'] = ( $sid > 0 && isset( $cats[ $sid ] ) ) ? $cats[ $sid ] : null;
+                }
+                unset( $it );
+                return $items;
+        }
+
+        /**
          * گزارش یک روز یک کاربر — خروجی: {date, user_id, user_name, items:[]}
          * (مدیران می‌توانند user_id دیگری ببینند؛ کاربر عادی فقط خودش)
+         * ۱.۳۰.۰ — هر قلم 'category' هم دارد (گروه‌بندی دسته‌بندی در کلاینت)
          */
         public static function day( $user_id, $date = '' ) {
                 $user_id = (int) $user_id;
@@ -290,7 +315,7 @@ class TPP_Workreport {
                         'date'      => $date,
                         'user_id'   => $user_id,
                         'user_name' => $user ? $user->display_name : ( 'کاربر #' . $user_id ),
-                        'items'     => array_map( array( 'self', 'shape_item' ), (array) $rows ),
+                        'items'     => self::attach_categories( array_map( array( 'self', 'shape_item' ), (array) $rows ) ),
                 );
         }
 
@@ -390,6 +415,20 @@ class TPP_Workreport {
                         }
                         $days[ $index[ $date ] ]['items'][] = self::shape_item( $r );
                         $total++;
+                }
+                // ۱.۳۰.۰ — دسته‌بندی سرویس هر قلم (یک کوئری برای همه روزها)
+                $all = array();
+                foreach ( $days as $d ) {
+                        foreach ( $d['items'] as $it ) {
+                                $all[] = $it;
+                        }
+                }
+                $cats = self::categories_for_items( $all );
+                foreach ( $days as $k => $d ) {
+                        foreach ( $d['items'] as $i => $it ) {
+                                $sid = (int) ( $it['service_id'] ?? 0 );
+                                $days[ $k ]['items'][ $i ]['category'] = ( $sid > 0 && isset( $cats[ $sid ] ) ) ? $cats[ $sid ] : null;
+                        }
                 }
                 return array(
                         'from'       => $from,

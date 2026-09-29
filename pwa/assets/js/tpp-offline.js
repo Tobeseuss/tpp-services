@@ -282,13 +282,34 @@ TPP.api = (function () {
                 return transport;
         }
 
-        /* ---------- درخواست عمومی با تلاش مجدد هوشمند ---------- */
+        /* ---------- درخواست عمومی با تلاش مجدد هوشمند ----------
+         * ۱.۳۰.۰ — مهلت زمانی پیش‌فرض برای همه درخواست‌ها (رفع «گاهی جستجو کار نمی‌کند» / کندی در شبکه ناپایدار):
+         * در شبکه‌های موبایل ناپایدار fetch ممکن است ده‌ها ثانیه بی‌پاسخ بماند؛ اکنون:
+         *   GET → ۱۵ ثانیه | نوشتن → ۳۰ ثانیه | صفحات همگام‌سازی کامل (bulk) → ۴۵ ثانیه | دانلود فایل (raw) → بدون مهلت
+         * در رسیدن مهلت، خطای network پرتاب می‌شود تا مسیرهای جایگزین محلی (جستجوی آفلاین، بوت آفلاین) فعال شوند. */
+        const REQ_TIMEOUT_GET = 15000;
+        const REQ_TIMEOUT_WRITE = 30000;
+        const REQ_TIMEOUT_BULK = 45000;
+
+        function withDeadline(promise, ms) {
+                return new Promise((resolve, reject) => {
+                        const t = setTimeout(() => {
+                                const err = new Error('مهلت پاسخ سرور تمام شد — اتصال اینترنت ناپایدار است');
+                                err.network = true;
+                                err.timeout = true;
+                                reject(err);
+                        }, ms);
+                        promise.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+                });
+        }
 
         async function request(method, path, body, params, opts) {
                 opts = opts || {};
                 await ensureTransport();
+                const ms = opts.raw ? 0 : (opts.bulk ? REQ_TIMEOUT_BULK : (('GET' === method) ? REQ_TIMEOUT_GET : REQ_TIMEOUT_WRITE));
+                const run = (retryOpts) => doRequest(method, path, body, params, retryOpts);
                 try {
-                        return await doRequest(method, path, body, params, opts);
+                        return await (ms ? withDeadline(run(opts), ms) : run(opts));
                 } catch (e) {
                         // nonce کوکی منقضی شده → تازه‌سازی از ping و تلاش مجدد
                         if (e && e.code === 'rest_cookie_invalid_nonce' && !opts._retried) {
@@ -299,10 +320,13 @@ TPP.api = (function () {
                                 return doRequest(method, path, body, params, Object.assign({}, opts, { _retried: true }));
                         }
                         // خطای شبکه → شاید ترنسپورت خراب است؛ دوباره تشخیص بده و یک‌بار تلاش کن
+                        // (۱.۳۰.۰ — تلاش مجدد هم زیر همان مهلت زمانی می‌ماند)
                         if (e && e.network && !opts._retried) {
                                 try {
                                         await ensureTransport(true);
-                                        return await doRequest(method, path, body, params, Object.assign({}, opts, { _retried: true }));
+                                        const retry = run(Object.assign({}, opts, { _retried: true }));
+                                        const left = ms ? Math.max(5000, ms - REQ_TIMEOUT_GET) : 0;
+                                        return await (left ? withDeadline(retry, left) : retry);
                                 } catch (e2) { throw e2; }
                         }
                         throw e;
@@ -486,6 +510,7 @@ TPP.offline = (function () {
                 cacheState = Object.assign(defaultCacheState(), cacheState, patch);
                 state.cache = { ...cacheState };
                 emit('cache', { ...cacheState });
+                invalidateIndex(); // ۱.۳۰.۰ — داده کش عوض شد؛ ایندکس جستجو در اولین جستجوی بعدی بازسازی می‌شود
                 TPP_IDB.set('kv', CACHE_STATE_KEY, cacheState).catch(() => {});
         }
 
@@ -528,7 +553,7 @@ TPP.offline = (function () {
                                 while (fetched < total && page <= 400) {
                                         let res;
                                         try {
-                                                res = await TPP.api.request('GET', 'search', null, { page, per_page: perSize });
+                                                res = await TPP.api.request('GET', 'search', null, { page, per_page: perSize }, { bulk: true }); // ۱.۳۰.۰ — مهلت ۴۵ث برای صفحات سنگین همگام‌سازی
                                         } catch (e) {
                                                 if (e && e.network) throw e; // شبکه قطع است — اندازه صفحه ربطی ندارد
                                                 // خطای سرور (حجم/وقت/دسترسی) → یک اندازه کوچک‌تر امتحان شود
@@ -536,7 +561,7 @@ TPP.offline = (function () {
                                                 if (!next) throw e;
                                                 perSize = next;
                                                 saveCacheState({ perPage: perSize });
-                                                res = await TPP.api.request('GET', 'search', null, { page, per_page: perSize });
+                                                res = await TPP.api.request('GET', 'search', null, { page, per_page: perSize }, { bulk: true });
                                         }
                                         total = parseInt(res.total, 10) || 0;
                                         const rows = res.rows || [];
@@ -655,79 +680,170 @@ TPP.offline = (function () {
                 return out;
         }
 
-        /* ---------- جستجوی محلی (آفلاین — استریم با cursor) ---------- */
+        /* ---------- ۱.۳۰.۰ — ایندکس درون-رم جستجوی آفلاین (رفع کندی) ----------
+         * مشکل قبلی: هر جستجو (هر کلید تایپ‌شده با debounce) کل فروشگاه services را با cursor از دیسک
+         * می‌خواند و norm() را روی همه فیلدهای همه رکوردها دوباره اجرا می‌کرد — با داده زیاد چند ثانیه.
+         * راه‌حل: ایندکس یک‌بارساخته {id → {row, fields نرمال‌شده}} که بین جستجوها استفاده می‌شود؛
+         * با هر تغییر کش (همگام‌سازی/عملیات آفلاین) باطل و در اولین جستجوی بعدی بازسازی می‌شود. */
+        let svcIndex = null;      // Promise<Map<string, {row, fields}>>
+        let indexSig = '';        // امضای schema — تغییر آن یعنی کلیدهای searchable عوض شده‌اند
+        let indexDirty = true;
+
+        function invalidateIndex() { indexDirty = true; svcIndex = null; }
+
+        function indexSignature(schema) {
+                try {
+                        return (schema.address || []).map((f) => f.slug + (f.is_searchable ? '*' : '')).join(',') +
+                                '|' + (schema.service || []).map((f) => f.slug + (f.is_searchable ? '*' : '')).join(',');
+                } catch (e) { return ''; }
+        }
+
+        /** مقادیر نرمال‌شده همه فیلدهای متنی رکورد + آدرسش — کلیدها با پیشوند s:/a: مثل جستجوی قبلی */
+        function indexEntry(row) {
+                const fields = {};
+                const put = (key, v) => {
+                        if (typeof v === 'string' && v) fields[key] = norm(v);
+                        else if (typeof v === 'number' && isFinite(v)) fields[key] = norm(String(v));
+                };
+                Object.keys(row || {}).forEach((k) => put('s:' + k, row[k]));
+                const addr = row && row.address;
+                if (addr && typeof addr === 'object') Object.keys(addr).forEach((k) => put('a:' + k, addr[k]));
+                return { row, fields };
+        }
+
+        function getIndex(schema) {
+                const sig = indexSignature(schema);
+                if (!indexDirty && svcIndex && sig === indexSig) return svcIndex;
+                indexSig = sig;
+                indexDirty = false;
+                svcIndex = (async () => {
+                        const map = new Map();
+                        await TPP_IDB.cursor('services', (row) => {
+                                if (row && row.id != null) map.set(String(row.id), indexEntry(row));
+                        });
+                        return map;
+                })();
+                // اگر بازسازی شکست خورد، دفعه بعد دوباره تلاش شود
+                svcIndex.catch(() => { invalidateIndex(); });
+                return svcIndex;
+        }
+
+        /** فیلترهای نرمال‌شده — مقادیر خالی حذف می‌شوند */
+        function normFiltersOf(filters) {
+                const out = {};
+                Object.entries(filters || {}).forEach(([k, v]) => { if (v) out[k] = norm(v); });
+                return out;
+        }
+
+        /** تطبیق ساختاری رکورد (بازه ویرایش + دایری + فیلترهای اختصاصی) — متن آزاد جداگانه بررسی می‌شود */
+        function rowMatch(row, q, filters, schema, upd) {
+                const uFrom = upd && upd.from ? String(upd.from) : '';
+                const uTo = upd && upd.to ? String(upd.to) : '';
+                const prog = (upd && upd.prog) || null;
+                // بازه زمانی ویرایش — مقایسه بخش تاریخ (۱۰ نویسه اول) به‌صورت متنی و بدون منطقه‌زمانی
+                if (uFrom || uTo) {
+                        const d = String(row.updated_at || '').slice(0, 10);
+                        if (uFrom && d < uFrom) return false;
+                        if (uTo && d > uTo) return false;
+                }
+                if (!progMatchRow(row, prog)) return false;
+                // فیلترهای اختصاصی
+                for (const [slug, val] of Object.entries(filters || {})) {
+                        const svcVal = norm(row[slug] !== undefined ? row[slug] : (row.address ? row.address[slug] : ''));
+                        if (svcVal.indexOf(val) === -1) return false;
+                }
+                return true;
+        }
+
+        function searchableKeys(schema) {
+                const out = [];
+                (schema.address || []).forEach((f) => { if (f.is_searchable) out.push('a:' + f.slug); });
+                (schema.service || []).forEach((f) => { if (f.is_searchable) out.push('s:' + f.slug); });
+                return out;
+        }
+
+        /** ۱.۱۲.۰ — تطبیق وضعیت دایری روی خلاصه progress ردیف (معادل منطق SQL سرور) */
+        function progMatchRow(row, prog) {
+                if (!prog || (!prog.status && !prog.step)) return true;
+                const p = row && row.progress;
+                const done = p ? (p.done || 0) : 0;
+                const total = p ? (p.total || 16) : 16;
+                // ۱.۱۴.۰ — خرابی‌ها آرایه‌اند (failures)؛ failure تکی برای داده قدیمی
+                const fails = p ? ((p.failures && p.failures.length) ? p.failures.slice() : (p.failure ? [p.failure] : [])) : [];
+                const hasFail = fails.length > 0;
+                const steps = p && Array.isArray(p.steps) ? p.steps : [];
+                if (prog.status) {
+                        const st = prog.status;
+                        // هماهنگ با سرور: خرابی اولویت دارد (none/progress/done فقط بدون خرابی)
+                        if (st === 'none' && !(done === 0 && !hasFail)) return false;
+                        if (st === 'progress' && !((done > 0 && done < total) && !hasFail)) return false;
+                        if (st === 'done' && !(done >= total && !hasFail)) return false;
+                        if (st === 'fail' && !hasFail) return false;
+                        if (st.indexOf('fail_') === 0 && fails.indexOf(st.slice(5)) === -1) return false;
+                }
+                if (prog.step) {
+                        const has = steps.indexOf(prog.step) !== -1;
+                        if (prog.stepState === 'todo' ? has : !has) return false;
+                }
+                return true;
+        }
 
         /**
-         * جستجوی محلی در کش دیسکی — رکوردها با cursor یکی‌یکی از دیسک خوانده می‌شوند
-         * (بدون لود کل داده در رم) و فقط نتایج مطابق در حافظه می‌مانند.
+         * جستجوی محلی (آفلاین) — ۱.۳۰.۰: از ایندکس درون-رم استفاده می‌کند (سرعت چند ده برابر در تایپ متوالی)؛
+         * در دسترس نبودن ایندکس → پیمایش cursor. فیلتر دسته/تگ هم اکنون آفلاین اعمال می‌شود (۱.۳۰.۰).
          * sort: updated|unit|block|postal|address — order: asc|desc (هماهنگ با سرور)
-         * upd: {from, to} — بازه زمانی ویرایش به تاریخ میلادی ISO (اختیاری، هماهنگ با سرور)
+         * upd: {from, to, prog, cat, tags}
          */
         async function searchLocal(query, filters, schema, sort, order, upd) {
                 const q = norm(query);
-                const uFrom = upd && upd.from ? String(upd.from) : '';
-                const uTo = upd && upd.to ? String(upd.to) : '';
-                const prog = (upd && upd.prog) || null; // ۱.۱۲.۰ — فیلتر وضعیت دایری {status, step, stepState}
-                const searchableSlugs = [];
-                (schema.address || []).forEach((f) => { if (f.is_searchable) searchableSlugs.push('a:' + f.slug); });
-                (schema.service || []).forEach((f) => { if (f.is_searchable) searchableSlugs.push('s:' + f.slug); });
+                const cat = upd && upd.cat ? parseInt(upd.cat, 10) || 0 : 0;
+                const tagIds = (upd && Array.isArray(upd.tags)) ? upd.tags.map((t) => parseInt(t, 10) || 0).filter(Boolean) : [];
+                const normFilters = normFiltersOf(filters);
+                const keys = searchableKeys(schema);
+                const updOnly = { from: (upd && upd.from) || '', to: (upd && upd.to) || '', prog: (upd && upd.prog) || null };
 
-                const normFilters = {};
-                Object.entries(filters || {}).forEach(([k, v]) => { if (v) normFilters[k] = norm(v); });
+                let entries = null;
+                try { entries = Array.from((await getIndex(schema)).values()); } catch (e) { entries = null; }
 
-                // ۱.۱۲.۰ — تطبیق وضعیت دایری روی خلاصه progress ردیف (معادل منطق SQL سرور)
-                const progMatch = (row) => {
-                        if (!prog || (!prog.status && !prog.step)) return true;
-                        const p = row && row.progress;
-                        const done = p ? (p.done || 0) : 0;
-                        const total = p ? (p.total || 16) : 16;
-                        // ۱.۱۴.۰ — خرابی‌ها آرایه‌اند (failures)؛ failure تکی برای داده قدیمی
-                        const fails = p ? ((p.failures && p.failures.length) ? p.failures.slice() : (p.failure ? [p.failure] : [])) : [];
-                        const hasFail = fails.length > 0;
-                        const steps = p && Array.isArray(p.steps) ? p.steps : [];
-                        if (prog.status) {
-                                const st = prog.status;
-                                // هماهنگ با سرور: خرابی اولویت دارد (none/progress/done فقط بدون خرابی)
-                                if (st === 'none' && !(done === 0 && !hasFail)) return false;
-                                if (st === 'progress' && !((done > 0 && done < total) && !hasFail)) return false;
-                                if (st === 'done' && !(done >= total && !hasFail)) return false;
-                                if (st === 'fail' && !hasFail) return false;
-                                if (st.indexOf('fail_') === 0 && fails.indexOf(st.slice(5)) === -1) return false;
+                /** گام‌های تطبیق مشترک؛ fields فقط در مسیر ایندکس در دسترس است */
+                const keep = (row, fields) => {
+                        if (!rowMatch(row, q, normFilters, schema, updOnly)) return false;
+                        // ۱.۳۰.۰ — فیلتر دسته‌بندی/تگ در آفلاین (مثل سرور)
+                        if (cat && !(row.category && parseInt(row.category.id, 10) === cat)) return false;
+                        if (tagIds.length) {
+                                const rt = Array.isArray(row.tags) ? row.tags : [];
+                                if (!tagIds.some((t) => rt.some((x) => x && parseInt(x.id, 10) === t))) return false;
                         }
-                        if (prog.step) {
-                                const has = steps.indexOf(prog.step) !== -1;
-                                if (prog.stepState === 'todo' ? has : !has) return false;
+                        // متن آزاد — روی مقادیر از-پیش نرمال‌شده ایندکس (سریع) یا مستقیم (مسیر cursor)
+                        if (q) {
+                                let matched = false;
+                                if (fields) {
+                                        for (const key of keys) {
+                                                const v = fields[key];
+                                                if (v && v.indexOf(q) !== -1) { matched = true; break; }
+                                        }
+                                } else {
+                                        for (const key of keys) {
+                                                const [grp, slug] = key.split(':');
+                                                const val = grp === 'a' ? (row.address ? row.address[slug] : '') : row[slug];
+                                                if (norm(val).indexOf(q) !== -1) { matched = true; break; }
+                                        }
+                                }
+                                if (!matched) return false;
                         }
                         return true;
                 };
 
                 const out = [];
-                await TPP_IDB.cursor('services', (row) => {
-                        // بازه زمانی ویرایش — مقایسه بخش تاریخ (۱۰ نویسه اول) به‌صورت متنی و بدون منطقه‌زمانی
-                        if (uFrom || uTo) {
-                                const d = String(row.updated_at || '').slice(0, 10);
-                                if (uFrom && d < uFrom) return;
-                                if (uTo && d > uTo) return;
+                if (entries) {
+                        for (const { row, fields } of entries) {
+                                if (keep(row, fields)) out.push(row);
                         }
-                        // ۱.۱۲.۰ — وضعیت دایری
-                        if (!progMatch(row)) return;
-                        // فیلترهای اختصاصی
-                        for (const [slug, val] of Object.entries(normFilters)) {
-                                const svcVal = norm(row[slug] !== undefined ? row[slug] : (row.address ? row.address[slug] : ''));
-                                if (svcVal.indexOf(val) === -1) return; // رد شد — سراغ رکورد بعدی
-                        }
-                        // متن آزاد
-                        if (q) {
-                                let matched = false;
-                                for (const key of searchableSlugs) {
-                                        const [grp, slug] = key.split(':');
-                                        const val = grp === 'a' ? (row.address ? row.address[slug] : '') : row[slug];
-                                        if (norm(val).indexOf(q) !== -1) { matched = true; break; }
-                                }
-                                if (!matched) return;
-                        }
-                        out.push(row);
-                });
+                } else {
+                        await TPP_IDB.cursor('services', (row) => {
+                                if (keep(row, null)) out.push(row);
+                        });
+                }
                 sortRows(out, sort, order);
                 return out;
         }
@@ -834,6 +950,7 @@ TPP.offline = (function () {
                 } else if (kind === 'history.delete') {
                         await removeHistoryFromCache({ ids: (payload.ids || []).map((i) => parseInt(i, 10)) });
                 }
+                invalidateIndex(); // ۱.۳۰.۰ — عملیات آفلاین کش را عوض کرد؛ ایندکس جستجو بازسازی شود
         }
 
         /** حذف رکوردهای تاریخچه از کش محلی (بر اساس شناسه یا کل تاریخچه یک سرویس) */

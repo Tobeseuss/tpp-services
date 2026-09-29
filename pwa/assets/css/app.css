@@ -1228,6 +1228,11 @@ html.tpp-embed .login-screen { min-height: 60vh; }
 
 /* اقلام گزارش کار */
 .wr-items { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
+/* ۱.۳۰.۰ — گروه‌بندی دسته‌بندی در گزارش کار + تأکید بولد/ایتالیک متن قلم */
+.wr-cat { display: flex; flex-direction: column; gap: 8px; margin: 2px 0 12px; }
+.wr-cat-head { font-weight: 800; font-size: 13px; color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); border-radius: 10px; padding: 7px 12px; }
+.wr-content b { font-weight: 800; color: var(--text); }
+.wr-content i, .wr-content i.wr-fail { color: color-mix(in srgb, var(--text) 72%, transparent); font-style: italic; }
 .wr-item { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; background: color-mix(in srgb, var(--bg) 55%, transparent); }
 .wr-num { flex: 0 0 auto; min-width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; background: color-mix(in srgb, var(--primary) 14%, transparent); color: var(--primary); font-weight: 700; font-size: 13px; margin-top: 2px; }
 .wr-content { flex: 1 1 auto; white-space: pre-wrap; word-break: break-word; line-height: 2; font-size: 13.5px; color: var(--text); }

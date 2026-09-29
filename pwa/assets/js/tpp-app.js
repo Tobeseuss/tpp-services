@@ -9,7 +9,7 @@ window.TPP = window.TPP || {};
 
 /** نسخه این کد — با نسخه‌ای که سرور در bootstrap می‌فرستد مقایسه می‌شود؛
  *  اگر فرق کنند یعنی پوسته قدیمی در مرورگر مانده و باید تازه شود. */
-TPP.VERSION = '1.29.0';
+TPP.VERSION = '1.30.0';
 
 /* ==================== ۱.۱۳.۰ — منطق آبشاری مراحل دایری (معادل سرور) ====================
    مراحل وابسته‌اند: تیک مرحله N همه مراحل قبل از N را خودکار تیک می‌زند؛
@@ -156,10 +156,23 @@ TPP.app = (function () {
                 return { el: backdrop, close };
         }
 
-        /** کپی متن در کلیپ‌بورد (با fallback مرورگرهای قدیمی) */
-        async function copyText(text) {
+        /** کپی متن در کلیپ‌بورد (با fallback مرورگرهای قدیمی)
+         * ۱.۳۰.۰ — پارامتر دوم اختیاری html: وقتی مرورگر پشتیبانی کند، علاوه بر text/plain
+         * نسخه text/html هم نوشته می‌شود تا با چسباندن در تلگرام/واتساپ‌وب/Word،
+         * بولد/ایتالیک متن گزارش حفظ شود. */
+        async function copyText(text, html) {
                 const str = String(text == null ? '' : text);
                 if (!str.trim()) return false;
+                const rich = String(html || '').trim();
+                if (rich && navigator.clipboard && window.ClipboardItem && window.isSecureContext) {
+                        try {
+                                await navigator.clipboard.write([new ClipboardItem({
+                                        'text/plain': new Blob([str], { type: 'text/plain' }),
+                                        'text/html': new Blob([rich], { type: 'text/html' })
+                                })]);
+                                return true;
+                        } catch (e) { /* ادامه به روش متنی */ }
+                }
                 if (navigator.clipboard && window.isSecureContext) {
                         try { await navigator.clipboard.writeText(str); return true; } catch (e) { /* ادامه به fallback */ }
                 }
@@ -485,9 +498,15 @@ TPP.app = (function () {
                 navigator.serviceWorker.addEventListener('controllerchange', () => {
                         if (!hadController || reloading) return;
                         reloading = true;
+                        /* ۱.۳۰.۰ — رفع باگ «منوهای قدیمی پس از بروزرسانی PWA»: قبلاً یک نشانه دائم
+                         * در sessionStorage ریلودهای بعدی را برای کل نشست می‌بست؛ در PWA نصب‌شده
+                         * نشست مدت‌ها زنده می‌ماند و بروزرسانی‌های بعدی بدون رفرش دستی اعمال نمی‌شدند.
+                         * اکنون فقط «حلقه ریلود پشت‌سرهم» (کمتر از ۱۵ ثانیه) بسته می‌شود و هر
+                         * بروزرسانی واقعی SW دوباره ریلود خودکار می‌گیرد. */
                         try {
-                                if (sessionStorage.getItem('tpp_sw_reloaded') === '1') { reloading = false; return; }
-                                sessionStorage.setItem('tpp_sw_reloaded', '1');
+                                const last = parseInt(sessionStorage.getItem('tpp_sw_reloaded_at') || '0', 10);
+                                if (last && Date.now() - last < 15000) { reloading = false; return; }
+                                sessionStorage.setItem('tpp_sw_reloaded_at', String(Date.now()));
                         } catch (e) {}
                         location.reload();
                 });
@@ -1994,7 +2013,8 @@ TPP.app = (function () {
         }
 
         async function localSearchFallback() {
-                const rows = await TPP.offline.searchLocal(searchState.query, searchState.filters, state.schema, searchState.sort, searchState.order, { from: searchState.updFrom, to: searchState.updTo, prog: searchState.prog });
+                /* ۱.۳۰.۰ — فیلتر دسته/تگ در جستجوی آفلاین هم اعمال می‌شود (قبلاً نادیده گرفته می‌شد) */
+                const rows = await TPP.offline.searchLocal(searchState.query, searchState.filters, state.schema, searchState.sort, searchState.order, { from: searchState.updFrom, to: searchState.updTo, prog: searchState.prog, cat: searchState.cat, tags: searchState.tags });
                 // ۱.۹.۲: اگر صفحه فعلی خارج از محدوده نتایج محلی است (مثلاً بعد از قطع اینترنت)، به صفحه اول برگرد
                 if (searchState.page > 1 && (searchState.page - 1) * searchState.perPage >= rows.length) searchState.page = 1;
                 const start = (searchState.page - 1) * searchState.perPage;

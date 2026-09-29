@@ -9,6 +9,10 @@
  *  ۴) «افزودن دستی»: انتخاب تاریخ از تقویم + «اقدام انجام‌شده» از فهرست آماده (گروه‌بندی‌شده)
  *     + جستجوی کامل سرویس در همه فیلدها با دکمه «فیلتر» (فیلتر فیلد/وضعیت دایری/دسته/تگ) و صفحه‌بندی
  *  ۵) اخطار نگهداشت تاریخچه فعالیت (n روز — طبق تنظیمات): اگر به گزارش تبدیل نشود از دست می‌رود
+ *  ۱.۳۰.۰ (درخواست کاربر):
+ *     - اقلام گزارش بر اساس دسته‌بندی سرویس گروه‌بندی می‌شوند (سرتیتر دسته + شماره‌گذاری داخل گروه)
+ *     - متن قلم با بولد/ایتالیک نمایش داده می‌شود (خروج از حالت یکنواخت)
+ *     - کپی گزارش نسخه HTML هم دارد (چسباندن در تلگرام/واتساپ‌وب/Word با حفظ بولد/ایتالیک)
  * مدیران می‌توانند گزارش سایر کاربران را ببینند (فقط-مشاهده)؛ افزودن/ویرایش/حذف مالک خود گزارش است.
  */
 'use strict';
@@ -200,7 +204,7 @@ TPP.views = TPP.views || {};
                 document.getElementById('content').innerHTML = `
                 <div class="card">
                         <h3>📝 گزارش کار</h3>
-                        <p class="muted">گزارش اقدامات انجام‌شده هر روز برای ارائه به مدیران شرکت — از فعالیت‌های همان روز یا به‌صورت دستی ساخته می‌شود و قلم‌های آن قابل افزودن، ویرایش و حذف است. متن هر قلم ساده است: «اقدام (آدرس)، دایری سرویس تا مرحله (X)، مراحل باقیمانده بعدی از مرحله (Y)، خرابی اعلام‌شده».</p>
+                        <p class="muted">گزارش اقدامات انجام‌شده هر روز برای ارائه به مدیران شرکت — از فعالیت‌های همان روز یا به‌صورت دستی ساخته می‌شود و قلم‌های آن قابل افزودن، ویرایش و حذف است. متن هر قلم ساده است: «اقدام (آدرس)، دایری سرویس تا مرحله (X)، خرابی اعلام‌شده». اقلام بر اساس دسته‌بندی سرویس گروه‌بندی و شماره‌گذاری می‌شوند.</p>
                         <div class="wr-period-row">
                                 <button class="btn wr-period${wr.period === 'day' ? ' btn-primary' : ''}" data-period="day" title="گزارش یک روز خاص">📅 روزانه</button>
                                 <button class="btn wr-period${wr.period === 'week' ? ' btn-primary' : ''}" data-period="week" title="گزارش هفته جاری (شنبه تا جمعه)">هفتگی</button>
@@ -607,7 +611,7 @@ TPP.views = TPP.views || {};
                 <div class="card">
                         <h3>📝 ${esc(periodTitle())}${isManagerView() ? ' — ' + esc(wr.data.user_name || '') : ''}</h3>
                         ${retentionBanner()}
-                        <div id="wr-items" class="wr-items">${items.length ? items.map(itemHtml).join('') :
+                        <div id="wr-items" class="wr-items">${items.length ? groupItems(items).map(catGroupHtml).join('') :
                                 '<div class="empty-state" style="padding:16px"><p class="muted">برای این روز هنوز قلمی ثبت نشده است.<br>از «فعالیت‌های این روز» یا دکمه «افزودن دستی» استفاده کنید.</p></div>'}</div>
                         <div class="actions-row" style="flex-wrap:wrap">
                                 ${editable ? '<button class="btn btn-primary" id="wr-add-manual">➕ افزودن دستی گزارش</button>' : '<span class="muted">این گزارش متعلق به کاربر دیگری است — فقط مشاهده.</span>'}
@@ -633,7 +637,7 @@ TPP.views = TPP.views || {};
                         ${days.length ? days.map((d) => `
                         <div class="wr-range-day">
                                 <div class="wr-range-day-head"><b>${esc(jal(d.date))}</b> <span class="chip">${faNum(d.items.length)} قلم</span></div>
-                                <div class="wr-items">${d.items.map(itemHtml).join('')}</div>
+                                <div class="wr-items">${d.items.length ? groupItems(d.items).map(catGroupHtml).join('') : ''}</div>
                         </div>`).join('') : '<div class="empty-state" style="padding:16px"><p class="muted">در این بازه گزارشی ثبت نشده است.</p></div>'}
                         <div class="actions-row" style="flex-wrap:wrap">
                                 ${editable && wr.mode === 'day' ? '<button class="btn btn-primary" id="wr-add-manual">➕ افزودن دستی گزارش</button>' : ''}
@@ -666,10 +670,11 @@ TPP.views = TPP.views || {};
                 }));
                 const copyBtn = document.getElementById('wr-copy');
                 if (copyBtn) copyBtn.addEventListener('click', async () => {
-                        const text = reportText();
-                        if (!text.trim()) { toast('قلمی برای کپی وجود ندارد.', 'warn'); return; }
-                        const ok = await TPP.app.copyText(text);
-                        toast(ok ? '📋 متن گزارش کپی شد.' : 'کپی ناموفق — دستی انتخاب کنید.', ok ? 'success' : 'warn');
+                        /* ۱.۳۰.۰ — کپی دوگانه: متن ساده + نسخه HTML (بولد/ایتالیک در پیام‌رسان‌ها/Word) */
+                        const rep = reportText();
+                        if (!rep.text.trim()) { toast('قلمی برای کپی وجود ندارد.', 'warn'); return; }
+                        const ok = await TPP.app.copyText(rep.text, rep.html);
+                        toast(ok ? '📋 متن گزارش کپی شد (با قالب‌بندی بولد/ایتالیک).' : 'کپی ناموفق — دستی انتخاب کنید.', ok ? 'success' : 'warn');
                 });
         }
 
@@ -681,12 +686,59 @@ TPP.views = TPP.views || {};
                 return '<div class="alert warn" style="margin-top:8px">⚠️ تاریخچه فعالیت‌ها به‌طور خودکار فقط برای <b>' + faNum(r.days) + ' روز</b> (طبق تنظیمات) نگهداری می‌شوند — اگر فعالیت‌ها را به گزارش کار تبدیل نکنید، پس از این مدت از دست خواهند رفت.</div>';
         }
 
-        /** HTML یک قلم */
-        function itemHtml(it) {
+        /* ============================================================
+         * ۱.۳۰.۰ — نمایش ساختاری + گروه‌بندی دسته‌بندی (درخواست کاربر)
+         * ============================================================ */
+
+        /** اجزای متن قلم با جداکننده سرور « ، » */
+        function itemSegments(content) {
+                return String(content || '').split(' ، ').map((s) => s.trim()).filter(Boolean);
+        }
+
+        /**
+         * HTML قلم با تأکید (خروج از یکنواختی متن):
+         *   بخش اقدام + آدرس → اقدام بولد | بخش‌های «دایری…» و «خرابی اعلام‌شده…» → ایتالیک
+         * متن‌های دستی بدون ساختار مشخص، عیناً نمایش داده می‌شوند.
+         */
+        function styledItem(content) {
+                const segs = itemSegments(content);
+                if (!segs.length) return '';
+                return segs.map((seg, i) => {
+                        if (i > 0 && seg.indexOf('دایری') === 0) return '<i>' + esc(seg) + '</i>';
+                        if (i > 0 && seg.indexOf('خرابی') === 0) return '<i class="wr-fail">' + esc(seg) + '</i>';
+                        if (i === 0) {
+                                const m = /^([^()]+?)\s*\((.*)\)$/.exec(seg);
+                                if (m) return '<b>' + esc(m[1]) + '</b> (' + esc(m[2]) + ')';
+                                return '<b>' + esc(seg) + '</b>';
+                        }
+                        return esc(seg);
+                }).join(' ، ');
+        }
+
+        /** گروه‌بندی اقلام بر اساس دسته‌بندی سرویس (به ترتیب ورود؛ اقلام بی‌دسته → «بدون دسته‌بندی») */
+        function groupItems(items) {
+                const groups = [];
+                const gmap = {};
+                (items || []).forEach((it) => {
+                        const label = (it.category && it.category.label) ? String(it.category.label) : 'بدون دسته‌بندی';
+                        if (!gmap[label]) { gmap[label] = { label: label, items: [] }; groups.push(gmap[label]); }
+                        gmap[label].items.push(it);
+                });
+                return groups;
+        }
+
+        /** HTML یک گروه دسته: سرتیتر + اقلام شماره‌دار داخل گروه (مطابق مثال کاربر) */
+        function catGroupHtml(g) {
+                return '<div class="wr-cat"><div class="wr-cat-head">🏷 ' + esc(g.label) + '</div>' +
+                        g.items.map((it, i) => itemHtml(it, i + 1)).join('') + '</div>';
+        }
+
+        /** HTML یک قلم — num: شماره نمایشی داخل گروه (خالی = sort قلم) */
+        function itemHtml(it, num) {
                 return `
                 <div class="wr-item">
-                        <span class="wr-num">${faNum(it.sort)}</span>
-                        <div class="wr-content">${esc(it.content)}</div>
+                        <span class="wr-num">${faNum(num || it.sort)}</span>
+                        <div class="wr-content">${styledItem(it.content)}</div>
                         <div class="wr-meta">
                                 ${it.service_id ? '<button class="btn btn-sm" data-wr-svc="' + esc(String(it.service_id)) + '" title="بازکردن سرویس">🛰️ سرویس #' + faNum(it.service_id) + '</button>' : ''}
                                 <span class="muted">${fmtDate(it.created_at)}</span>
@@ -696,23 +748,71 @@ TPP.views = TPP.views || {};
                 </div>`;
         }
 
-        /** متن کامل گزارش برای کپی (روزانه و بازه‌ای) */
+        /**
+         * متن کامل گزارش برای کپی (روزانه و بازه‌ای) — ۱.۳۰.۰:
+         *  - گروه‌بندی بر اساس دسته‌بندی (سرتیتر + شماره‌گذاری داخل گروه)
+         *  - خروجی دوگانه: {text: متن ساده, html: نسخه HTML با بولد/ایتالیت}
+         *    (نسخه HTML با چسباندن در تلگرام/واتساپ‌وب/Word قالب‌بندی را حفظ می‌کند)
+         */
         function reportText() {
-                if (!wr.data) return '';
+                if (!wr.data) return { text: '', html: '' };
                 const user = isManagerView() ? ' — ' + (wr.data.user_name || '') : '';
-                const lines = [];
+                const P = ' ، '; // جداکننده بخش‌های قلم — مثل سرور
+                const escHtml = (s) => esc(s);
+
+                /** یک قلم: متن ساده و HTML با تأکید */
+                const itemParts = (it, num) => {
+                        const segs = itemSegments(it.content);
+                        const plain = segs.join(P);
+                        let html = segs.map((seg, i) => {
+                                if (i > 0 && seg.indexOf('دایری') === 0) return '<i>' + escHtml(seg) + '</i>';
+                                if (i > 0 && seg.indexOf('خرابی') === 0) return '<i>' + escHtml(seg) + '</i>';
+                                if (i === 0) {
+                                        const m = /^([^()]+?)\s*\((.*)\)$/.exec(seg);
+                                        return m ? ('<b>' + escHtml(m[1]) + '</b> (' + escHtml(m[2]) + ')') : ('<b>' + escHtml(seg) + '</b>');
+                                }
+                                return escHtml(seg);
+                        }).join(P);
+                        return { plain: faNum(num) + '- ' + plain, html: '<div style="margin:2px 0">' + faNum(num) + '- ' + html + '</div>' };
+                };
+
+                /** یک گروه دسته: خط سرتیتر + اقلام شماره‌دار */
+                const groupParts = (g) => {
+                        const plain = ['🏷 ' + g.label];
+                        const html = ['<div style="margin:8px 0 2px"><b>🏷 ' + escHtml(g.label) + '</b></div>'];
+                        g.items.forEach((it, i) => {
+                                const p = itemParts(it, i + 1);
+                                plain.push(p.plain);
+                                html.push(p.html);
+                        });
+                        return { plain: plain, html: html };
+                };
+
+                const headPlain = (wr.mode === 'range') ? (periodTitle() + user) : ('گزارش کار — ' + jal(wr.data.date) + user);
+                const headHtml = '<div style="margin-bottom:6px"><b>' + escHtml(headPlain) + '</b></div>';
+                const plain = [headPlain];
+                const html = [headHtml];
+
                 if (wr.mode === 'range') {
-                        lines.push(periodTitle() + user, '');
-                        (wr.data.days || []).forEach((d) => {
-                                lines.push('— ' + jal(d.date) + ':');
-                                d.items.forEach((it) => { lines.push(faNum(it.sort) + '. ' + it.content); });
-                                lines.push('');
+                        (wr.data.days || []).forEach((d, di) => {
+                                if (di > 0) plain.push('');
+                                plain.push('— ' + jal(d.date) + ':');
+                                html.push('<div style="margin:8px 0 2px"><b>— ' + escHtml(jal(d.date)) + ':</b></div>');
+                                groupItems(d.items).forEach((g) => {
+                                        const gp = groupParts(g);
+                                        plain.push(...gp.plain, '');
+                                        html.push(...gp.html);
+                                });
                         });
                 } else {
-                        lines.push('گزارش کار — ' + jal(wr.data.date) + user, '');
-                        (wr.data.items || []).forEach((it) => { lines.push(faNum(it.sort) + '. ' + it.content); });
+                        plain.push('');
+                        groupItems(wr.data.items || []).forEach((g) => {
+                                const gp = groupParts(g);
+                                plain.push(...gp.plain, '');
+                                html.push(...gp.html);
+                        });
                 }
-                return lines.join('\n');
+                return { text: plain.join('\n').replace(/\n{3,}/g, '\n\n').trim(), html: '<div dir="rtl" style="font-family:inherit;line-height:1.9">' + html.join('\n') + '</div>' };
         }
 
         /* ============================================================
@@ -961,7 +1061,7 @@ TPP.views = TPP.views || {};
                         '<option value="__custom">✍️ سایر (نوشتن دستی)…</option>' +
                         '</select>' +
                         '<textarea id="wr-action" rows="2" style="width:100%;resize:vertical;margin-top:8px" placeholder="مثال: رفع مشکل / تحویل سرویس / نصب مودم / عیب‌یابی فیوژن …"></textarea>' +
-                        '<div class="hint">با انتخاب سرویس، متن قلم ساده ساخته می‌شود: «اقدام (آدرس کامل، بلوک، پلاک، واحد) ، دایری سرویس تا مرحله (X) ، مراحل باقیمانده بعدی از مرحله (Y) ، خرابی اعلام‌شده». بدون سرویس فقط متن اقدام ثبت می‌شود.</div></div>' +
+                        '<div class="hint">با انتخاب سرویس، متن قلم ساده ساخته می‌شود: «اقدام (آدرس کامل، بلوک، پلاک، واحد) ، دایری سرویس تا مرحله (X) ، خرابی اعلام‌شده». بدون سرویس فقط متن اقدام ثبت می‌شود.</div></div>' +
                         '<div id="wr-preview" class="wr-preview"></div>' +
                         '</div>' +
                         '<div class="modal-foot"><button class="btn" data-close>انصراف</button><button class="btn btn-primary" id="wr-submit">✅ ثبت در گزارش</button></div>',
