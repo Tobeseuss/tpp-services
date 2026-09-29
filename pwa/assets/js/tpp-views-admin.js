@@ -55,7 +55,7 @@ TPP.views = TPP.views || {};
                                 <div class="big">📄</div>
                                 <p><b>فایل اکسل را اینجا رها کنید</b> یا برای انتخاب کلیک کنید</p>
                                 <p class="muted">حداکثر حجم مجاز: ${imp.maxSizeLabel ? esc(imp.maxSizeLabel) : '۱۰'} مگابایت — سطر اول باید عنوان ستون‌ها باشد</p>
-                                <input type="file" id="import-file" accept=".xlsx" class="hidden">
+                                <input type="file" id="import-file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="hidden">
                         </div>
                         <div id="import-progress" class="hidden" style="margin-top:16px"><div class="spinner"></div> در حال پردازش فایل…</div>
                 </div>
@@ -124,7 +124,7 @@ TPP.views = TPP.views || {};
                 ws.innerHTML = `
                 <div class="card">
                         <h3>۲) نگاشت ستون‌ها به فیلدها</h3>
-                        <p class="muted">فایل: ${esc(s.file)} — ${s.row_count} ردیف داده تشخیص داده شد${s.empty_rows ? ' (' + s.empty_rows + ' ردیف کاملاً خالی نادیده گرفته شد)' : ''}. نگاشت خودکار انجام شده؛ در صورت نیاز اصلاح کنید.</p>
+                        <p class="muted">فایل: ${esc(s.file)}${s.sheet_name ? ' — شیت «' + esc(s.sheet_name) + '»' : ''} — ${s.row_count} ردیف داده تشخیص داده شد${s.empty_rows ? ' (' + s.empty_rows + ' ردیف کاملاً خالی نادیده گرفته شد)' : ''}. نگاشت خودکار انجام شده؛ در صورت نیاز اصلاح کنید.</p>
                         <div id="map-status"></div>
                         <div class="table-wrap mapping-table"><table class="tpp-table">
                                 <thead><tr><th>ستون فایل</th><th>فیلد مربوطه</th><th>نمونه مقدار</th></tr></thead>

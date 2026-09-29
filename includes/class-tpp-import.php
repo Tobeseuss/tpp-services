@@ -381,18 +381,54 @@ class TPP_Import {
                         return new WP_Error( 'tpp_file_too_large', 'حجم فایل بیش از حد مجاز (' . $max_mb . ' مگابایت) است.' );
                 }
 
+                // ۱.۳۱.۰ — تشخیص فرمت‌های اشتباه رایج با پیام شفاف (قبل از باز کردن ZIP)
+                $head = (string) file_get_contents( $file_path, false, null, 0, 8 );
+                if ( 4 <= strlen( $head ) && "\xD0\xCF\x11\xE0" === substr( $head, 0, 4 ) ) {
+                        return new WP_Error( 'tpp_old_xls', 'این فایل با فرمت قدیمی xls است — در اکسل با Save As آن را به فرمت xlsx ذخیره کنید و دوباره آپلود کنید.' );
+                }
+                if ( 2 <= strlen( $head ) && 'PK' !== substr( $head, 0, 2 ) ) {
+                        $is_text = '' !== trim( $head ) && ! preg_match( '/[^\x20-\x7E\xA0-\xFF\n\r\t]/', $head );
+                        return new WP_Error( 'tpp_not_xlsx', $is_text
+                                ? 'این فایل اکسل (xlsx) نیست؛ به نظر یک فایل متنی/CSV می‌رسد. فایل را در اکسل باز و با فرمت «Excel Workbook (*.xlsx)» ذخیره کنید.'
+                                : 'فایل اکسل معتبر نیست. فقط فایل‌های xlsx پشتیبانی می‌شوند (فایل‌های xls قدیمی را در اکسل با Save As به xlsx تبدیل کنید).' );
+                }
+
                 try {
                         $reader = new TPP_XLSX_Reader();
                         if ( ! $reader->open( $file_path ) ) {
                                 return new WP_Error( 'tpp_bad_file', 'فایل اکسل معتبر نیست. فقط فایل‌های xlsx پشتیبانی می‌شوند (فایل‌های xls قدیمی را در اکسل با Save As به xlsx تبدیل کنید).' );
                         }
-                        $rows = $reader->rows( $max_rows + 1 );
+                        // ۱.۳۱.۰ — شیت‌ها به‌ترتیب workbook امتحان می‌شوند؛ اولین شیتِ دارای داده ملاک است
+                        // (اگر داده‌ها در شیت دیگری غیر از شیت اول باشند هم ایمپورت کار می‌کند)
+                        $rows       = null;
+                        $sheet_used = '';
+                        $best       = array();
+                        $best_name  = '';
+                        $best_count = -1;
+                        foreach ( $reader->sheets() as $sh ) {
+                                $candidate = $reader->rows_from( $sh['path'], $max_rows + 1 );
+                                $cnt       = is_array( $candidate ) ? count( $candidate ) : 0;
+                                if ( $cnt > $best_count ) {
+                                        $best_count = $cnt;
+                                        $best       = is_array( $candidate ) ? $candidate : array();
+                                        $best_name  = $sh['name'];
+                                }
+                                if ( $cnt >= 2 ) {
+                                        $rows       = $candidate;
+                                        $sheet_used = $sh['name'];
+                                        break;
+                                }
+                        }
+                        if ( null === $rows ) { // همه شیت‌ها خالی/تک‌ردیفه بودند → پر داده‌ترین شیت برای پیام خطا
+                                $rows       = $best;
+                                $sheet_used = $best_name;
+                        }
                         $reader->close();
                 } catch ( Throwable $e ) {
                         return new WP_Error( 'tpp_read_error', 'خطا در خواندن فایل اکسل: ' . $e->getMessage() );
                 }
                 if ( ! is_array( $rows ) || count( $rows ) < 2 ) {
-                        return new WP_Error( 'tpp_empty', 'فایل خالی است یا فقط سرستون دارد.' );
+                        return new WP_Error( 'tpp_empty', 'شیت «' . $sheet_used . '» خالی است یا فقط سرستون دارد — داده‌ها را در آن شیت وارد کرده و دوباره آپلود کنید.' );
                 }
 
                 $headers = array_map( 'trim', (array) array_shift( $rows ) );
@@ -449,6 +485,8 @@ class TPP_Import {
                         'headers'          => $headers,
                         'mapping'          => $mapping,
                         'fields'           => array_values( $fields_by_slug ),
+                        // ۱.۳۱.۰ — نام شیتی که داده‌ها از آن خوانده شد (برای نمایش در مرحله نگاشت)
+                        'sheet_name'       => $sheet_used,
                         // ۱.۱۳.۰ — شبه‌فیلدهای دایری برای مرحله نگاشت (computed — ستون فیلد واقعی نیستند)
                         'pseudo_fields'    => array(
                                 array( 'slug' => self::PROGRESS_FIELD, 'label' => 'پیشرفت دایری (عدد ۱-۱۶، درصد، کلید یا برچسب مرحله، «کامل»/«هیچ»)' ),
