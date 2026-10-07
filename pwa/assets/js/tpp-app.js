@@ -9,7 +9,7 @@ window.TPP = window.TPP || {};
 
 /** نسخه این کد — با نسخه‌ای که سرور در bootstrap می‌فرستد مقایسه می‌شود؛
  *  اگر فرق کنند یعنی پوسته قدیمی در مرورگر مانده و باید تازه شود. */
-TPP.VERSION = '1.31.0';
+TPP.VERSION = '1.32.0';
 
 /* ==================== ۱.۱۳.۰ — منطق آبشاری مراحل دایری (معادل سرور) ====================
    مراحل وابسته‌اند: تیک مرحله N همه مراحل قبل از N را خودکار تیک می‌زند؛
@@ -97,7 +97,8 @@ TPP.app = (function () {
                 logoutUrl: '',
                 route: 'dashboard',
                 params: {},
-                stats: null
+                stats: null,
+                env: null // ۱.۳۲.۰ — وضعیت SSL/HTTP از سرور (request_scheme/site_scheme/scheme_mismatch)
         };
 
         /* حالت امبد: اپ داخل iframe در صفحه سایت/پیشخوان — ورود/خروج با خود وردپرس پیوند شده است */
@@ -666,6 +667,7 @@ TPP.app = (function () {
                 state.loginUrl = payload.login_url || state.loginUrl;
                 state.logoutUrl = payload.logout_url || '';
                 state.stats = payload.stats || null;
+                state.env = payload.env || null; // ۱.۳۲.۰ — وضعیت SSL/HTTP برای کارت وضعیت اتصال
 
                 // ذخیره وضعیت برای بوت آفلاین
                 TPP_IDB.set('kv', 'user_state', { user: state.user, caps: state.caps, isManager: state.isManager, isWPAdmin: state.isWPAdmin, schema: state.schema, settings: state.settings, sms: state.sms, progress: state.progress, site: state.site, loginUrl: state.loginUrl, logoutUrl: state.logoutUrl });

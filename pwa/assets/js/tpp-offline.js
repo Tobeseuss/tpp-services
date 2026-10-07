@@ -45,6 +45,16 @@ TPP.api = (function () {
 
         /* ---------- استخراج آدرس سایت از آدرس خود اسکریپت ---------- */
 
+        /** ۱.۳۲.۰ — تعویض اسکیمای یک URL (http↔https) برای مسیرهای جایگزین با/بدون SSL */
+        function mirrorScheme(u) {
+                try {
+                        const x = new URL(String(u));
+                        if (x.protocol !== 'http:' && x.protocol !== 'https:') return String(u);
+                        x.protocol = (x.protocol === 'https:') ? 'http:' : 'https:';
+                        return x.href;
+                } catch (e) { return String(u); }
+        }
+
         function siteBaseCandidates() {
                 const out = [];
                 try {
@@ -66,6 +76,13 @@ TPP.api = (function () {
                         list.push({ type: 'pretty', url: base + '/wp-json/tpp/v1' });
                         list.push({ type: 'ugly', url: base + '/index.php?rest_route=/tpp/v1' });
                 }
+                // ۱.۳۲.۰ — مقاوم‌سازی SSL/HTTP: بعد از کاندیدهای هم‌اسکیمای صفحه، واریانت اسکیمای دیگر هم
+                // اضافه می‌شود (http↔https). اگر SSL سایت مشکل پیدا کند، اپ خودکار از مسیر http (یا برعکس) کار می‌کند.
+                const primary = list.slice();
+                for (const cand of primary) {
+                        const alt = mirrorScheme(cand.url);
+                        if (alt && alt !== cand.url) list.push({ type: cand.type, url: alt });
+                }
                 return list.filter((v, i, a) => v.url && a.findIndex((x) => x.url === v.url) === i);
         }
 
@@ -74,6 +91,13 @@ TPP.api = (function () {
                 if (CFG.ajaxUrl) list.push(CFG.ajaxUrl);
                 for (const base of siteBaseCandidates()) {
                         list.push(base + '/wp-admin/admin-ajax.php');
+                }
+                // ۱.۳۲.۰ — واریانت اسکیمای دیگر بعد از هم‌اسکیماها (admin-ajax هدر CORS ندارد؛
+                // فقط وقتی REST در هر دو اسکیما در دسترس نبود به‌عنوان آخرین گزینه امتحان می‌شود)
+                const primary = list.slice();
+                for (const u of primary) {
+                        const alt = mirrorScheme(u);
+                        if (alt && alt !== u) list.push(alt);
                 }
                 return list.filter((v, i, a) => v && a.indexOf(v) === i);
         }
@@ -234,16 +258,57 @@ TPP.api = (function () {
 
         /* ---------- تشخیص ترنسپورت ---------- */
 
+        /* ۱.۳۲.۰ — حافظه ترنسپورت سالم: مسیر برنده در localStorage ذخیره می‌شود تا در بارگذاری‌های
+         * بعدی اول همان امتحان شود (سریع) و اگر خراب شده بود، اسکن کامل خودکار از سر گرفته شود.
+         * همچنین هر پروب کاندید ۶ ثانیه مهلت دارد تا پورت httpsِ هنگ‌کرده بوت اپ را قفل نکند. */
+        const TRANSPORT_KEY = 'tpp_transport_v1';
+        const PROBE_TIMEOUT = 6000;
+
+        function loadSavedTransport() {
+                try {
+                        const raw = localStorage.getItem(TRANSPORT_KEY);
+                        if (!raw) return null;
+                        const v = JSON.parse(raw);
+                        if (v && v.mode === 'rest' && v.base && v.base.url) return v;
+                        if (v && v.mode === 'ajax' && v.url) return v;
+                } catch (e) {}
+                return null;
+        }
+
+        function saveTransport(t) {
+                try {
+                        if (!t) { localStorage.removeItem(TRANSPORT_KEY); return; }
+                        localStorage.setItem(TRANSPORT_KEY, JSON.stringify(t));
+                } catch (e) {}
+        }
+
+        /** fetch با مهلت پروب (مهلت واقعی شبکه — جدا از withDeadline درخواست‌های عادی) */
+        async function probeFetch(url, opts) {
+                const ctl = ('AbortController' in window) ? new AbortController() : null;
+                const timer = ctl ? setTimeout(() => ctl.abort(), PROBE_TIMEOUT) : null;
+                try {
+                        return await fetch(url, Object.assign({}, opts, ctl ? { signal: ctl.signal } : {}));
+                } finally {
+                        if (timer) clearTimeout(timer);
+                }
+        }
+
         async function detectTransport() {
-                // ۱) REST-API (ابتدا آدرس مشتق‌شده از خود اسکریپت — سازگار با نصب در زیرپوشه)
+                // ۱) REST-API — کاندیدها به ترتیب: مسیر ذخیره‌شده سالم قبلی → هم‌اسکیمای صفحه → واریانت اسکیمای دیگر
                 let blockedRest = null;
-                for (const base of restCandidates()) {
+                let candidates = restCandidates();
+                const savedT = loadSavedTransport();
+                if (savedT && savedT.mode === 'rest') {
+                        candidates = [savedT.base].concat(candidates.filter((c) => c.url !== savedT.base.url));
+                }
+                for (const base of candidates) {
                         try {
-                                const res = await fetch(restUrl(base, 'ping'), { cache: 'no-store', credentials: 'same-origin' });
+                                const res = await probeFetch(restUrl(base, 'ping'), { cache: 'no-store', credentials: 'same-origin' });
                                 const json = await res.json().catch(() => null);
                                 if (json && json.ok === true) {
                                         if (json.nonce) setNonce(json.nonce);
                                         transport = { mode: 'rest', base };
+                                        saveTransport(transport);
                                         return transport;
                                 }
                                 // REST هست ولی برای کاربر ناشناس محدود شده (افزونه امنیتی) — به‌عنوان گزینه آخر نگه دار
@@ -260,6 +325,7 @@ TPP.api = (function () {
                                 const json = await ajaxRequest(url, 'GET', 'ping', null, null, {});
                                 if (json && json.ok === true) {
                                         if (json.nonce) setNonce(json.nonce);
+                                        saveTransport(transport);
                                         return transport;
                                 }
                                 transport = saved;
@@ -270,8 +336,10 @@ TPP.api = (function () {
                 // ۳) آخرین گزینه: RESTِ محدودشده (شاید با کوکی کاربر واردشده باز شود)
                 if (blockedRest) {
                                 transport = { mode: 'rest', base: blockedRest };
+                                saveTransport(transport);
                                 return transport;
                 }
+                saveTransport(null);
                 transport = null;
                 throw new Error('REST-API افزونه در دسترس نیست — اتصال اینترنت و مسدودسازی توسط افزونه امنیتی را بررسی کنید');
         }
@@ -445,7 +513,10 @@ TPP.api = (function () {
                 setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
         }
 
-        return { request, upload, download, openHtml, login, setToken, setNonce, hasToken, ensureTransport, detectBase: ensureTransport, mode: () => (transport ? transport.mode : null) };
+        return { request, upload, download, openHtml, login, setToken, setNonce, hasToken, ensureTransport, detectBase: ensureTransport, mode: () => (transport ? transport.mode : null),
+                /* ۱.۳۲.۰ — اطلاعات ترنسپورت فعال برای کارت «وضعیت اتصال و SSL» */
+                info: () => (transport ? { mode: transport.mode, url: (transport.mode === 'ajax') ? transport.url : transport.base.url, type: (transport.mode === 'rest') ? transport.base.type : 'ajax', saved: !!loadSavedTransport() } : null),
+                mirrorScheme };
 })();
 
 /* ============================ Offline Engine ============================ */

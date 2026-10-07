@@ -65,6 +65,10 @@ TPP.views = TPP.views || {};
                                 <div class="api-base"><span class="muted">آدرس پایه:</span> <code dir="ltr">${esc(base.pretty || '')}</code> <button class="btn btn-sm" data-copy="${esc(base.pretty || '')}">📋</button></div>
                                 <div class="api-base"><span class="muted">جایگزین (پیوند یکتا خاموش):</span> <code dir="ltr">${esc(base.ugly || '')}</code> <button class="btn btn-sm" data-copy="${esc(base.ugly || '')}">📋</button></div>
                                 <div class="api-base"><span class="muted">پشتیبان admin-ajax:</span> <code dir="ltr">${esc(base.ajax || '')}</code> <button class="btn btn-sm" data-copy="${esc(base.ajax || '')}">📋</button></div>
+                                ${base.pretty_alt ? `<div class="api-base" style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--border,#ccc)"><span class="muted">🌐 مسیر جایگزین بدون/با SSL (۱.۳۲.۰) — اگر گواهی سایت مشکل پیدا کرد، همین سه مسیر با اسکیمای دیگر هم کار می‌کنند:</span></div>` : ''}
+                                ${base.pretty_alt ? `<div class="api-base"><span class="muted">آدرس پایه جایگزین:</span> <code dir="ltr">${esc(base.pretty_alt || '')}</code> <button class="btn btn-sm" data-copy="${esc(base.pretty_alt || '')}">📋</button></div>` : ''}
+                                ${base.ugly_alt ? `<div class="api-base"><span class="muted">جایگزین (پیوند یکتا خاموش):</span> <code dir="ltr">${esc(base.ugly_alt || '')}</code> <button class="btn btn-sm" data-copy="${esc(base.ugly_alt || '')}">📋</button></div>` : ''}
+                                ${base.ajax_alt ? `<div class="api-base"><span class="muted">پشتیبان admin-ajax جایگزین:</span> <code dir="ltr">${esc(base.ajax_alt || '')}</code> <button class="btn btn-sm" data-copy="${esc(base.ajax_alt || '')}">📋</button></div>` : ''}
                         </div>
                 </div>
 

@@ -68,6 +68,15 @@ class TPP_SMS {
 
         /* ==================== کلاینت SMS.ir ==================== */
 
+        /** ۱.۳۲.۰ — تشخیص خطای SSL/TLS در WP_Error (گواهی ناقص میزبان، CA قدیمی و…) */
+        private static function is_ssl_error( $response ) {
+                $msg = ( $response instanceof WP_Error ) ? strtolower( (string) $response->get_error_message() ) : '';
+                if ( '' === $msg ) {
+                        return false;
+                }
+                return (bool) preg_match( '/curl error 3[5-9]|curl error 5[0-9]|curl error 6[0-9]|curl error 7[0-9]|ssl|tls|certificate|ca ?cert/', $msg );
+        }
+
         private function remote_request( $method, $endpoint, $body = null ) {
                 if ( ! $this->is_configured() ) {
                         return new WP_Error( 'tpp_sms_not_configured', 'کلید API پنل پیامک تنظیم نشده است. ابتدا از تنظیمات افزونه کلید را وارد کنید.', array( 'status' => 400 ) );
@@ -85,6 +94,12 @@ class TPP_SMS {
                         $args['body'] = wp_json_encode( $body );
                 }
                 $response = wp_remote_request( self::API_BASE . $endpoint, $args );
+
+                // ۱.۳۲.۰ — اگر میزبان مشکل SSL داشت (گواهی/CA ناقص)، یک بار بدون اعتبارسنجی گواهی تلاش می‌شود
+                if ( is_wp_error( $response ) && self::is_ssl_error( $response ) ) {
+                        $args['sslverify'] = false;
+                        $response = wp_remote_request( self::API_BASE . $endpoint, $args );
+                }
 
                 if ( is_wp_error( $response ) ) {
                         return new WP_Error( 'tpp_sms_http', 'خطای ارتباط با سرور پیامک: ' . $response->get_error_message(), array( 'status' => 502 ) );

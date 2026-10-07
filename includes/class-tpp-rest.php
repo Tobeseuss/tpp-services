@@ -121,6 +121,7 @@ class TPP_Rest {
                         'login_url'  => wp_login_url(),
                         'logout_url' => wp_logout_url(),
                         'nonce'    => wp_create_nonce( 'wp_rest' ),
+                        'env'      => self::env_payload(), // ۱.۳۲.۰ — وضعیت SSL/HTTP برای کارت وضعیت اتصال اپ
                 );
         }
 
@@ -566,6 +567,18 @@ class TPP_Rest {
 
         /* -------------------- هندلرها: احراز هویت -------------------- */
 
+        /** ۱.۳۲.۰ — وضعیت اسکیمای درخواست و اسکیمای ذخیره‌شده وردپرس (آینه‌سازی خودکار در TPP_Ssl انجام شده) */
+        public static function env_payload() {
+                $site_scheme = (string) parse_url( home_url(), PHP_URL_SCHEME );
+                return array(
+                        'request_scheme' => is_ssl() ? 'https' : 'http',
+                        'site_scheme'    => $site_scheme,
+                        'scheme_mismatch' => ( $site_scheme && $site_scheme !== ( is_ssl() ? 'https' : 'http' ) ),
+                        'ssl_admin'      => ( defined( 'FORCE_SSL_ADMIN' ) && FORCE_SSL_ADMIN ),
+                        'http_fallback'  => true, // آینه‌سازی اسکیمای پیوندهای داخلی فعال است
+                );
+        }
+
         public function ping( WP_REST_Request $request ) {
                 $authed = self::can_access();
                 $result = array(
@@ -575,6 +588,7 @@ class TPP_Rest {
                         'version'    => TPP_VERSION,
                         'site'       => get_bloginfo( 'name' ),
                         'login_url'  => wp_login_url(),
+                        'env'        => self::env_payload(), // ۱.۳۲.۰ — وضعیت SSL/HTTP
                 );
                 if ( is_user_logged_in() ) {
                         tpp()->auth()->heartbeat_cookie_refresh(); // تمدید خودکار نشست
@@ -2294,6 +2308,10 @@ class TPP_Rest {
                 $base_pretty = rest_url( self::NS . '/' );
                 $base_ugly   = add_query_arg( array( 'rest_route' => '/' . self::NS . '/' ), home_url( '/' ) );
                 $ajax        = admin_url( 'admin-ajax.php?action=tpp_api' );
+                // ۱.۳۲.۰ — هر دو اسکیما: با/بدون SSL مسیر جایگزین همیشه موجود است
+                $v_pretty = TPP_Ssl::variants( $base_pretty );
+                $v_ugly   = TPP_Ssl::variants( $base_ugly );
+                $v_ajax   = TPP_Ssl::variants( $ajax );
 
                 $ep = static function ( $m, $p, $t, $d, $perm, $args = array(), $body = null ) {
                         return array( 'm' => $m, 'p' => $p, 't' => $t, 'd' => $d, 'perm' => $perm, 'args' => $args, 'body' => $body );
@@ -2515,6 +2533,10 @@ class TPP_Rest {
                                 'pretty' => $base_pretty,
                                 'ugly'    => $base_ugly,
                                 'ajax'    => $ajax,
+                                // ۱.۳۲.۰ — واریانت اسکیمای دیگر: اگر SSL سایت مشکل پیدا کرد، همان مسیر با http (یا برعکس) همیشه در دسترس است
+                                'pretty_alt' => isset( $v_pretty['https'] ) ? ( 0 === strpos( $base_pretty, 'https' ) ? $v_pretty['http'] : $v_pretty['https'] ) : '',
+                                'ugly_alt'   => isset( $v_ugly['https'] ) ? ( 0 === strpos( $base_ugly, 'https' ) ? $v_ugly['http'] : $v_ugly['https'] ) : '',
+                                'ajax_alt'   => isset( $v_ajax['https'] ) ? ( 0 === strpos( $ajax, 'https' ) ? $v_ajax['http'] : $v_ajax['https'] ) : '',
                         ),
                         'auth'       => array(
                                 array( 'title' => 'توکن اختصاصی (پیشنهادی — همه‌جا کار می‌کند)', 'desc' => 'هدر X-TPP-Token: <token> — از login یا api/tokens بگیرید. حتی بدون کوکی/nonce معتبر است.', 'example' => 'curl -H "X-TPP-Token: tpp_…" ' . $base_pretty . 'services/12' ),
@@ -2527,6 +2549,7 @@ class TPP_Rest {
                                 'عملیات‌های نوشتاری با op_id یکتا تکرارناپذیرند (idempotent) — برای اتصال سیستم‌های بی‌ثبات امن است.',
                                 'PHP API داخلی هم داریم: تابع tpp() — مستندات کامل در DEVELOPERS.md.',
                                 '۱.۱۸.۰ — همه زمان‌های ثبت‌شده (created_at/updated_at/…) به وقت تهران (Asia/Tehran) هستند و نمایش اپ شمسی است؛ فیلترهای تاریخ سرور میلادی YYYY-MM-DD می‌گیرند.',
+                                '۱.۳۲.۰ — مقاوم به SSL: اگر گواهی سایت مشکل پیدا کند، همان مسیرها با اسکیمای دیگر (پیشوند pretty_alt/ugly_alt/ajax_alt) هم کار می‌کنند و پیوندهای داخلی سایت خودکار با اسکیمای درخواست جاری تولید می‌شوند — با و بدون https همه‌چیز در دسترس است.',
                         ),
                         'groups'     => $groups,
                 );
@@ -2554,8 +2577,14 @@ class TPP_Rest {
                 $md .= "تمام امکانات افزونه از طریق REST API در دسترس است. این سند از همان منبعی تولید می‌شود که «مرکز API» داخل برنامه نمایش می‌دهد — همیشه همگام.\n\n";
                 $md .= "- آدرس پایه (پیوندهای یکتا روشن): `{$cat['base']['pretty']}`\n";
                 $md .= "- آدرس جایگزین (پیوندهای یکتا خاموش): `{$cat['base']['ugly']}`\n";
-                $md .= "- پشتیبان admin-ajax: `{$cat['base']['ajax']}`\n\n";
-                $md .= "## احراز هویت\n\n";
+                $md .= "- پشتیبان admin-ajax: `{$cat['base']['ajax']}`\n";
+                if ( ! empty( $cat['base']['pretty_alt'] ) ) {
+                        $md .= "\nاگر SSL سایت مشکل پیدا کرده باشد، همان سه مسیر با اسکیمای دیگر هم در دسترس‌اند:\n\n";
+                        $md .= "- آدرس پایه جایگزین: `{$cat['base']['pretty_alt']}`\n";
+                        $md .= "- آدرس جایگزین (پیوندهای یکتا خاموش): `{$cat['base']['ugly_alt']}`\n";
+                        $md .= "- پشتیبان admin-ajax جایگزین: `{$cat['base']['ajax_alt']}`\n";
+                }
+                $md .= "\n## احراز هویت\n\n";
                 foreach ( $cat['auth'] as $a ) {
                         $md .= "### {$a['title']}\n\n{$a['desc']}\n\n```bash\n{$a['example']}\n```\n\n";
                 }

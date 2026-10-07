@@ -1787,6 +1787,16 @@ TPP.views = TPP.views || {};
                 </div>
 
                 <div class="card">
+                        <h3>🌐 وضعیت اتصال و SSL (۱.۳۲.۰)</h3>
+                        <p class="muted">اگر گواهی SSL سایت مشکل پیدا کند اما نسخه http در دسترس باشد، افزونه خودکار خودش را وفق می‌دهد: پیوندهای داخلی با اسکیمای جاری تولید می‌شوند و اپ مسیر جایگزین (http/https + پیوند یکتای خاموش + پشتیبان admin-ajax) را خودکار پیدا می‌کند و به‌خاطر می‌سپارد — آنلاین، آفلاین و APIها با هر دو حالت کار می‌کنند. با دکمه زیر وضعیت واقعی هر دو مسیر را همین حالا ببینید.</p>
+                        <div id="ssl-status"></div>
+                        <div class="actions-row" style="display:flex;gap:8px;flex-wrap:wrap">
+                                <button class="btn btn-primary" id="ssl-check">🔍 آزمون هر دو مسیر (HTTP و HTTPS)</button>
+                        </div>
+                        <div id="ssl-result" style="margin-top:10px"></div>
+                </div>
+
+                <div class="card">
                         <h3>📱 پنل پیامک (SMS.ir)</h3>
                         <p class="muted">اتصال به سرویس پیامک <a href="https://sms.ir/rest-api/" target="_blank" rel="noopener">sms.ir</a> برای نمایش موجودی و ارسال مشخصات سرویس با پیامک. کلید API را از پنل کاربری sms.ir بخش «کلیدهای دسترسی» (منوی توسعه‌دهندگان) دریافت کنید.</p>
                         <div class="grid-2">
@@ -1948,6 +1958,92 @@ TPP.views = TPP.views || {};
                                         } catch (e) { oaBox().innerHTML += '<div class="alert err">خطا در بازگردانی: ' + esc(e.message) + '</div>'; rb.disabled = false; }
                                 });
                         } catch (e) { oaBox().innerHTML = '<div class="alert err">خطا: ' + esc(e.message) + '</div>'; }
+                        btn.disabled = false;
+                });
+
+                /* ---------- ۱.۳۲.۰ — وضعیت اتصال و SSL: آزمون زنده هر دو مسیر ---------- */
+                const sslBox = () => document.getElementById('ssl-result');
+                function sslStatusHtml() {
+                        const env = (TPP.app && TPP.app.state && TPP.app.state().env) || null;
+                        const info = (TPP.api && TPP.api.info) ? TPP.api.info() : null;
+                        const pageScheme = (location.protocol === 'https:') ? 'https' : 'http';
+                        const chip = (sc) => (sc === 'https' ? '🔒 HTTPS' : '🔓 HTTP');
+                        let html = '<div class="grid-2" style="margin-bottom:10px">';
+                        html += '<div class="field"><label>اسکیمای صفحه فعلی</label><div>' + chip(pageScheme) + '</div></div>';
+                        if (env) {
+                                html += '<div class="field"><label>اسکیمای ذخیره‌شده وردپرس (siteurl)</label><div>' + chip(env.site_scheme) +
+                                        (env.scheme_mismatch ? ' <span class="muted">— متفاوت با صفحه؛ آینه‌سازی خودکار فعال است ✅</span>' : '') + '</div></div>';
+                        }
+                        if (info) {
+                                html += '<div class="field" style="grid-column:1/-1"><label>مسیر فعال اپ الان</label><div dir="ltr" style="word-break:break-all"><code>' + esc(info.mode.toUpperCase() + ' (' + info.type + ') — ' + info.url) + '</code></div></div>';
+                        }
+                        html += '</div>';
+                        return html;
+                }
+                const sslStatusEl = document.getElementById('ssl-status');
+                if (sslStatusEl) sslStatusEl.innerHTML = sslStatusHtml();
+                function sslBase(scheme) {
+                        const m = String(location.href).match(/^(.*\/)wp-content\/plugins\//);
+                        if (!m) return null;
+                        return scheme + '://' + String(m[1]).replace(/^https?:\/\//i, '').replace(/\/$/, '');
+                }
+                async function sslProbe(url) {
+                        const now = () => (window.performance && performance.now) ? performance.now() : Date.now();
+                        const t0 = now();
+                        try {
+                                const ctl = ('AbortController' in window) ? new AbortController() : null;
+                                const timer = ctl ? setTimeout(() => ctl.abort(), 8000) : null;
+                                const res = await fetch(url, Object.assign({ cache: 'no-store', credentials: 'omit' }, ctl ? { signal: ctl.signal } : {}));
+                                if (timer) clearTimeout(timer);
+                                const json = await res.json().catch(() => null);
+                                if (json && json.ok) return { ok: true, ms: Math.round(now() - t0) };
+                                return { ok: false, ms: Math.round(now() - t0), status: res.status };
+                        } catch (e) {
+                                return { ok: false, ms: Math.round(now() - t0), err: (e && e.name === 'AbortError') ? 'مهلت تمام شد' : 'بدون پاسخ' };
+                        }
+                }
+                document.getElementById('ssl-check').addEventListener('click', async () => {
+                        const btn = document.getElementById('ssl-check');
+                        btn.disabled = true;
+                        sslBox().innerHTML = '<div class="loading-block"><div class="spinner"></div></div>';
+                        const cur = (location.protocol === 'https:') ? 'https' : 'http';
+                        const alt = (cur === 'https') ? 'http' : 'https';
+                        const rows = [];
+                        for (const sc of [cur, alt]) {
+                                const b = sslBase(sc);
+                                if (!b) break;
+                                const pP = await sslProbe(b + '/wp-json/tpp/v1/ping');
+                                rows.push({ sc, kind: 'REST (پیوند یکتا روشن)', url: b + '/wp-json/tpp/v1/ping', r: pP });
+                                if (!pP.ok) {
+                                        const pU = await sslProbe(b + '/index.php?rest_route=/tpp/v1/ping');
+                                        rows.push({ sc, kind: 'REST (پیوند یکتا خاموش)', url: b + '/index.php?rest_route=/tpp/v1/ping', r: pU });
+                                }
+                        }
+                        const chip = (sc) => (sc === 'https' ? '🔒 HTTPS' : '🔓 HTTP');
+                        const mark = (r) => r.ok ? '<span style="color:var(--ok,#2e7d32)">✅ پاسخ سالم</span>' : '<span style="color:var(--err,#c62828)">❌ ' + esc(r.err ? r.err : ('خطا ' + (r.status || ''))) + '</span>';
+                        let html = '<div class="table-wrap"><table class="tpp-table"><thead><tr><th>مسیر</th><th>نوع</th><th>نتیجه</th><th class="num-cell">زمان</th></tr></thead><tbody>';
+                        rows.forEach((row) => {
+                                html += '<tr><td>' + chip(row.sc) + '</td><td>' + esc(row.kind) + '</td><td>' + mark(row.r) + '</td><td class="num-cell">' + row.r.ms.toLocaleString('fa-IR') + ' م‌ث</td></tr>';
+                        });
+                        html += '</tbody></table></div>';
+                        const curOk = rows.filter((r) => r.sc === cur && r.ok).length > 0;
+                        const altOk = rows.filter((r) => r.sc === alt && r.ok).length > 0;
+                        const info = (TPP.api && TPP.api.info) ? TPP.api.info() : null;
+                        if (curOk && altOk) {
+                                html += '<div class="alert success">✅ هر دو مسیر در دسترس‌اند — اپ از مسیر فعال استفاده می‌کند و اگر هر لحظه یکی خراب شود، خودکار به مسیر دیگر سوئیچ می‌کند.</div>';
+                        } else if (curOk && !altOk) {
+                                html += '<div class="alert success">✅ مسیر ' + chip(cur) + ' سالم است و اپ از همان استفاده می‌کند. مسیر جایگزین در دسترس نیست (طبیعی است اگر فقط یکی از دو حالت روی سرور فعال باشد).</div>';
+                        } else if (!curOk && altOk) {
+                                html += '<div class="alert warn">⚠️ مسیر ' + chip(cur) + ' پاسخ نمی‌دهد اما ' + chip(alt) + ' سالم است — اپ خودکار از مسیر جایگزین استفاده می‌کند (اگر همین حالا صفحه را باز نکرده‌اید، یک بار رفرش کنید).</div>';
+                        } else {
+                                html += '<div class="alert err">❌ هیچ‌کدام از دو مسیر پاسخ ندادند — اپ در حالت آفلاین با داده‌های ذخیره‌شده این دستگاه ادامه می‌دهد و با برقراری اتصال خودکار همگام می‌شود.</div>';
+                        }
+                        if (info && info.url) {
+                                html += '<p class="muted" dir="ltr" style="word-break:break-all">Active: ' + esc(info.mode.toUpperCase()) + ' — ' + esc(info.url) + '</p>';
+                        }
+                        sslBox().innerHTML = html;
+                        const stEl = document.getElementById('ssl-status');
+                        if (stEl) stEl.innerHTML = sslStatusHtml();
                         btn.disabled = false;
                 });
 
