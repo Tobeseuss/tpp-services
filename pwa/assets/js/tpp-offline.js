@@ -260,9 +260,16 @@ TPP.api = (function () {
 
         /* ۱.۳۲.۰ — حافظه ترنسپورت سالم: مسیر برنده در localStorage ذخیره می‌شود تا در بارگذاری‌های
          * بعدی اول همان امتحان شود (سریع) و اگر خراب شده بود، اسکن کامل خودکار از سر گرفته شود.
-         * همچنین هر پروب کاندید ۶ ثانیه مهلت دارد تا پورت httpsِ هنگ‌کرده بوت اپ را قفل نکند. */
+         * همچنین هر پروب کاندید ۶ ثانیه مهلت دارد تا پورت httpsِ هنگ‌کرده بوت اپ را قفل نکند.
+         * ۱.۳۲.۱ — تشخیص، موتکس و کش شکست دارد: همزمان چند اسکن راه نمی‌افتد و بعد از یک اسکن
+         * شکست‌خورده، تا ۱۰ ثانیه بدون پروب تکراری همان خطا برگردانده می‌شود (جلوگیری از هجوم
+         * صف/flush به سرور نیمه‌مرده). پروب ping حالا با توکن افزونه هم فرستاده می‌شود تا اگر افزونه
+         * امنیتی فقط درخواستِ بی‌احراز را بسته، مسیر سالم «مسدود» تشخیص داده نشود. */
         const TRANSPORT_KEY = 'tpp_transport_v1';
         const PROBE_TIMEOUT = 6000;
+        const DETECT_FAIL_COOLDOWN = 10000;
+        let detectRun = null;  // اسکن در جریان — همه فراخوان‌ها همان را منتظر می‌مانند
+        let detectFail = null; // { ts, err } — آخرین شکست تشخیص برای مهلت سرد
 
         function loadSavedTransport() {
                 try {
@@ -293,9 +300,27 @@ TPP.api = (function () {
                 }
         }
 
+        /** ۱.۳۲.۱ — پیام تشخیصی هوشمند وقتی هیچ مسیری سالم تشخیص داده نشد */
+        function buildDetectErrorMessage(out) {
+                if (out.answered > 0) {
+                        // سرور زنده است اما مسیرهای افزونه پاسخ سالم ندادند → عمداً بسته شده
+                        return 'REST-API افزونه در دسترس نیست — سرور پاسخ می‌دهد اما مسیرهای افزونه مسدود شده‌اند؛ تنظیمات افزونه امنیتی/سرور را بررسی کنید';
+                }
+                const pageHttps = (location.protocol === 'https:');
+                if (pageHttps && out.httpsNet > 0 && out.httpNet > 0) {
+                        // صفحه https است، هم https و هم http (پروکسی جایگزین) بی‌پاسخ → SSL خراب + Mixed Content
+                        const base = siteBaseCandidates()[0] || location.origin;
+                        let httpUrl = '';
+                        try { const u = new URL(String(base)); u.protocol = 'http:'; u.hash = ''; httpUrl = u.href; } catch (e) {}
+                        return 'اتصال به سرور ممکن نیست — احتمالاً گواهی SSL سایت مشکل دارد و مرورگر هم تماس http از داخل صفحه https را اجازه نمی‌دهد (Mixed Content). ' + (httpUrl ? 'این صفحه را از آدرس http باز کنید: ' + httpUrl : 'این صفحه را از آدرس http سایت باز کنید.');
+                }
+                return 'REST-API افزونه در دسترس نیست — اتصال اینترنت و مسدودسازی توسط افزونه امنیتی را بررسی کنید';
+        }
+
         async function detectTransport() {
                 // ۱) REST-API — کاندیدها به ترتیب: مسیر ذخیره‌شده سالم قبلی → هم‌اسکیمای صفحه → واریانت اسکیمای دیگر
                 let blockedRest = null;
+                const probeOutcome = { httpsNet: 0, httpNet: 0, answered: 0 }; // ۱.۳۲.۱ — الگوی شکست برای پیام تشخیصی
                 let candidates = restCandidates();
                 const savedT = loadSavedTransport();
                 if (savedT && savedT.mode === 'rest') {
@@ -303,19 +328,27 @@ TPP.api = (function () {
                 }
                 for (const base of candidates) {
                         try {
-                                const res = await probeFetch(restUrl(base, 'ping'), { cache: 'no-store', credentials: 'same-origin' });
+                                // ۱.۳۲.۱ — پروب با توکن افزونه (اگر افزونه امنیتی درخواست بی‌احراز را بسته باشد، مسیر سالم «مسدود» تشخیص داده نمی‌شود)
+                                const probeHeaders = { 'Accept': 'application/json' };
+                                if (token) probeHeaders['X-TPP-Token'] = token;
+                                const res = await probeFetch(restUrl(base, 'ping'), { cache: 'no-store', credentials: 'same-origin', headers: probeHeaders });
+                                probeOutcome.answered++;
                                 const json = await res.json().catch(() => null);
                                 if (json && json.ok === true) {
                                         if (json.nonce) setNonce(json.nonce);
                                         transport = { mode: 'rest', base };
                                         saveTransport(transport);
+                                        detectFail = null;
+                                        if (TPP.offline && TPP.offline.setApiDown) TPP.offline.setApiDown(false);
                                         return transport;
                                 }
                                 // REST هست ولی برای کاربر ناشناس محدود شده (افزونه امنیتی) — به‌عنوان گزینه آخر نگه دار
                                 if (json && json.code && (res.status === 401 || res.status === 403) && !blockedRest) {
                                         blockedRest = base;
                                 }
-                        } catch (e) { /* گزینه بعدی */ }
+                        } catch (e) {
+                                if (/^https:/i.test(String(base.url))) probeOutcome.httpsNet++; else probeOutcome.httpNet++; // ۱.۳۲.۱
+                        }
                 }
                 // ۲) پشتیبان admin-ajax
                 for (const url of ajaxCandidates()) {
@@ -323,31 +356,51 @@ TPP.api = (function () {
                         try {
                                 transport = { mode: 'ajax', url };
                                 const json = await ajaxRequest(url, 'GET', 'ping', null, null, {});
+                                probeOutcome.answered++; // ۱.۳۲.۱ — ajax هم پاسخ داد (هرچند سالم نبود)
                                 if (json && json.ok === true) {
                                         if (json.nonce) setNonce(json.nonce);
                                         saveTransport(transport);
+                                        detectFail = null;
+                                        if (TPP.offline && TPP.offline.setApiDown) TPP.offline.setApiDown(false);
                                         return transport;
                                 }
                                 transport = saved;
                         } catch (e) {
                                 transport = saved;
+                                // ۱.۳۲.۱ — فقط شکست واقعی شبکه (بدون پاسخ HTTP) در الگوی SSL/Mixed-Content شمرده می‌شود؛ خطاهای ۴xx/۵xx یعنی سرور پاسخ داده
+                                if (!e || e.network || e.status === undefined) {
+                                        if (/^https:/i.test(String(url))) probeOutcome.httpsNet++; else probeOutcome.httpNet++;
+                                } else {
+                                        probeOutcome.answered++;
+                                }
                         }
                 }
                 // ۳) آخرین گزینه: RESTِ محدودشده (شاید با کوکی کاربر واردشده باز شود)
                 if (blockedRest) {
                                 transport = { mode: 'rest', base: blockedRest };
                                 saveTransport(transport);
+                                detectFail = null;
+                                if (TPP.offline && TPP.offline.setApiDown) TPP.offline.setApiDown(false);
                                 return transport;
                 }
                 saveTransport(null);
                 transport = null;
-                throw new Error('REST-API افزونه در دسترس نیست — اتصال اینترنت و مسدودسازی توسط افزونه امنیتی را بررسی کنید');
+                const err = new Error(buildDetectErrorMessage(probeOutcome)); // ۱.۳۲.۱ — پیام تشخیصی SSL/Mixed-Content
+                err.network = true; // شکست تشخیص = خطای شبکه؛ مسیرهای جایگزین محلی (جستجو/بوت آفلاین) سریع فعال شوند
+                err.transport = true;
+                detectFail = { ts: Date.now(), err };
+                if (TPP.offline && TPP.offline.setApiDown) TPP.offline.setApiDown(true);
+                throw err;
         }
 
         async function ensureTransport(force) {
                 if (transport && !force) return transport;
-                await detectTransport();
-                return transport;
+                // ۱.۳۲.۱ — اگر اسکن همین اخیر شکست خورده، بدون پروب تکراری همان خطا برگردد (force = اسکن مجدد اجباری)
+                if (!force && detectFail && (Date.now() - detectFail.ts) < DETECT_FAIL_COOLDOWN) throw detectFail.err;
+                if (!detectRun) {
+                        detectRun = detectTransport().finally(() => { detectRun = null; });
+                }
+                return detectRun;
         }
 
         /* ---------- درخواست عمومی با تلاش مجدد هوشمند ----------
@@ -529,8 +582,17 @@ TPP.offline = (function () {
                 pending: 0,
                 lastSync: null,
                 syncing: false,
-                cache: null // وضعیت کش آفلاین (۱.۹.۲) — { syncing, complete, cached, total, error, ts }
+                cache: null, // وضعیت کش آفلاین (۱.۹.۲) — { syncing, complete, cached, total, error, ts }
+                api_down: false // ۱.۳۲.۱ — ارتباط با سرور قطع است (تشخیص ترنسپورت شکست خورده) حتی اگر navigator.onLine درست باشد
         };
+
+        /** ۱.۳۲.۱ — علامت‌گذاری قطع/وصل ارتباط با سرور (از TPP.api.detectTransport فراخوانی می‌شود) */
+        function setApiDown(v) {
+                const val = !!v;
+                if (state.api_down === val) return;
+                state.api_down = val;
+                emit('change', { ...state });
+        }
 
         function emit(ev, data) { (listeners[ev] || []).forEach((fn) => { try { fn(data); } catch (e) {} }); }
         function on(ev, fn) { listeners[ev].push(fn); }
@@ -1092,11 +1154,15 @@ TPP.offline = (function () {
 
         /* ---------- همگام‌سازی ---------- */
 
+        /* نتیجه flush (۱.۳۲.۱) — صادقانه:
+         *   موفق  → { ok: true, results, summary, remaining }  (remaining = عملیات باقی‌مانده در صف)
+         *   شکست  → { ok: false, network, error, remaining }   (دیگر خطا قورت داده نمی‌شود؛ دکمه‌های همگام‌سازی واقعیت را نشان می‌دهند)
+         *   ردشدن → { ok: false, skipped: true }               (همگام‌سازی دیگری در جریان است / توکن نیست) */
         async function flush(force) {
-                if (state.syncing) return { skipped: true };
-                if (!TPP.api.hasToken()) return;
+                if (state.syncing) return { ok: false, skipped: true };
+                if (!TPP.api.hasToken()) return { ok: false, skipped: true };
                 const ops = await TPP_IDB.all('outbox');
-                if (!ops.length) { refreshPendingBadge(); return { results: [] }; }
+                if (!ops.length) { refreshPendingBadge(); return { ok: true, results: [], summary: {}, remaining: 0 }; }
 
                 state.syncing = true;
                 emit('sync', { syncing: true, count: ops.length });
@@ -1109,6 +1175,10 @@ TPP.offline = (function () {
                                 base_address_version: op.base_address_version || 0
                         }));
                         const res = await TPP.api.request('POST', 'sync', { ops: cleanOps });
+                        // ۱.۳۲.۱ — پاسخ ۲۰۰ ولی غیر JSON (صفحه خطای WAF/PHP) دیگر به TypeError بی‌صدا تبدیل نمی‌شود
+                        if (!res || !Array.isArray(res.results)) {
+                                throw new Error('پاسخ نامعتبر سرور در همگام‌سازی (احتمالاً افزونه امنیتی یا خطای PHP — در تنظیمات، آزمون مسیرها را اجرا کنید)');
+                        }
                         const results = res.results || [];
                         const summary = res.summary || {};
                         const keep = [];
@@ -1147,11 +1217,11 @@ TPP.offline = (function () {
                         if (keep.length === 0 && !force) {
                                 cacheAll().catch(() => {});
                         }
-                        return { results, summary };
+                        return { ok: true, results, summary, remaining: keep.length }; // ۱.۳۲.۱
                 } catch (e) {
-                        // خطای شبکه — همه عملیات در صف می‌مانند
+                        // خطای شبکه/سرور — همه عملیات در صف می‌مانند + واقعیت به فراخوان گزارش می‌شود (۱.۳۲.۱)
                         emit('sync', { syncing: false, network_error: e.message });
-                        return { network_error: e.message };
+                        return { ok: false, network: !!(e && e.network), error: (e && e.message) ? e.message : String(e), remaining: ops.length };
                 } finally {
                         state.syncing = false;
                 }
@@ -1199,6 +1269,7 @@ TPP.offline = (function () {
                 on, init, flush, cacheAll, searchLocal, enqueue, norm,
                 refreshPendingBadge, wipeLocal, lastSync, cacheStats, valuesLocal,
                 cacheHistory, historyLocal, historyForService, deleteHistoryEntries, sortRows,
+                setApiDown, // ۱.۳۲.۱
                 getPendingCount: () => state.pending
         };
 })();

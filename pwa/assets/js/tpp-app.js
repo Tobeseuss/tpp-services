@@ -9,7 +9,7 @@ window.TPP = window.TPP || {};
 
 /** نسخه این کد — با نسخه‌ای که سرور در bootstrap می‌فرستد مقایسه می‌شود؛
  *  اگر فرق کنند یعنی پوسته قدیمی در مرورگر مانده و باید تازه شود. */
-TPP.VERSION = '1.32.0';
+TPP.VERSION = '1.32.1';
 
 /* ==================== ۱.۱۳.۰ — منطق آبشاری مراحل دایری (معادل سرور) ====================
    مراحل وابسته‌اند: تیک مرحله N همه مراحل قبل از N را خودکار تیک می‌زند؛
@@ -792,7 +792,14 @@ TPP.app = (function () {
 
         function updateNetStatus(st) {
                 els.offlineIndicator.classList.toggle('offline', !st.online);
-                els.netLabel.textContent = st.online ? 'آنلاین' : 'آفلاین';
+                // ۱.۳۲.۱ — «آنلاین» فقط یعنی اینترنت دستگاه است؛ اگر ارتباط با سرور قطع باشد صریح گفته می‌شود
+                if (!st.online) {
+                        els.netLabel.textContent = 'آفلاین';
+                } else if (st.api_down) {
+                        els.netLabel.textContent = '⚠️ بدون دسترسی به سرور';
+                } else {
+                        els.netLabel.textContent = 'آنلاین';
+                }
                 if (st.pending > 0) {
                         els.outboxBadge.textContent = st.pending;
                         els.outboxBadge.classList.remove('hidden');
@@ -801,12 +808,21 @@ TPP.app = (function () {
                 }
         }
 
+        let lastNetErrToast = 0; // ۱.۳۲.۱ — ضداسپم: هر ۱۵ ثانیه حداکثر یک هشدار قطع ارتباط
         function onSyncEvent(ev) {
                 if (ev.conflict) {
                         toast('⚠️ تعارض همگام‌سازی در «' + esc(ev.conflict.payload && ev.conflict.payload.id ? 'سرویس #' + ev.conflict.payload.id : 'یک سرویس') + '» — تغییر شما ثبت شد اما شخص دیگری همزمان تغییر داده بود. جزئیات در تاریخچه.', 'warn', 9000);
                 }
                 if (ev.op_error) {
                         toast('❌ یک عملیات آفلاین اعمال نشد: ' + esc(ev.result && ev.result.message ? ev.result.message : 'خطای نامشخص'), 'error', 8000);
+                }
+                if (ev.network_error) {
+                        // ۱.۳۲.۱ — دیگر خطای شبکه همگام‌سازی بی‌صدا نیست؛ کاربر می‌داند عملیات در صف ماند
+                        const now = Date.now();
+                        if (now - lastNetErrToast > 15000) {
+                                lastNetErrToast = now;
+                                toast('⚠️ ارسال به سرور ناموفق بود: ' + esc(ev.network_error) + ' — عملیات‌ها در صف می‌مانند و به‌محض برقراری اتصال خودکار ارسال می‌شوند.', 'warn', 9000);
+                        }
                 }
                 if (ev.syncing === false && ev.summary && (ev.summary.applied || ev.summary.failed)) {
                         toast('همگام‌سازی کامل شد — ' + ev.summary.applied + ' مورد اعمال شد' + (ev.summary.failed ? '، ' + ev.summary.failed + ' خطا' : ''), ev.summary.failed ? 'warn' : 'success');
@@ -963,16 +979,21 @@ TPP.app = (function () {
                 }
         }
 
-        /** همگام‌سازی دستی/اجباری داده آفلاین (۱.۹.۲) — ارسال صف عملیات + کش کامل روی دستگاه */
+        /** همگام‌سازی دستی/اجباری داده آفلاین (۱.۹.۲) — ارسال صف عملیات + کش کامل روی دستگاه
+         *  ۱.۳۲.۱ — پیام «انجام شد» فقط وقتی نمایش داده می‌شود که واقعاً کامل شده باشد؛
+         *  در شکست، علت دقیق + تعداد عملیات مانده در صف گزارش می‌شود. */
         async function runOfflineSync() {
                 if (!TPP.offline.state().online) { toast('همگام‌سازی به اتصال اینترنت نیاز دارد.', 'warn'); return; }
                 toast('همگام‌سازی داده‌های آفلاین آغاز شد…');
-                try {
-                        await TPP.offline.flush(true).catch(() => {});
-                        await TPP.offline.cacheAll();
+                let flushRes = null, cacheErr = null;
+                try { flushRes = await TPP.offline.flush(true); } catch (e) { flushRes = { ok: false, error: (e && e.message) || 'خطای شبکه' }; }
+                try { await TPP.offline.cacheAll(); } catch (e) { cacheErr = e; }
+                if ((flushRes && flushRes.ok === false) || cacheErr) {
+                        const pending = TPP.offline.state().pending;
+                        const msg = (flushRes && flushRes.ok === false && !flushRes.skipped && flushRes.error) ? flushRes.error : ((cacheErr && cacheErr.message) || 'خطای شبکه');
+                        toast('❌ همگام‌سازی کامل نشد: ' + esc(msg) + (pending ? ' — ' + faNum(pending) + ' عملیات در صف ماند و به‌محض برقراری اتصال ارسال می‌شود.' : ''), 'error', 10000);
+                } else {
                         toast('همگام‌سازی انجام شد — داده‌های آفلاین این دستگاه کامل است.', 'success');
-                } catch (e) {
-                        toast('همگام‌سازی ناقص ماند (' + esc(e && e.message ? e.message : 'خطای شبکه') + ') — به‌صورت خودکار دوباره تلاش می‌شود.', 'error', 7000);
                 }
                 updateOfflineStatus();
         }
@@ -1022,7 +1043,7 @@ TPP.app = (function () {
                                 <p class="muted">آخرین همگام‌سازی: ${lastSync ? fmtDate(lastSync) : '—'} | آخرین تغییر ثبت‌شده: ${stats.last_change ? fmtDate(stats.last_change) : '—'}</p>
                                 <p class="muted">داده آفلاین این دستگاه: <b id="dash-cache">${(() => { const i = offlineCacheInfo(); return i ? (i.total ? faNum(i.n) + ' از ' + faNum(i.total) + ' سرویس ' + (i.complete ? '(کامل)' : '(ناقص)') : (i.n ? faNum(i.n) + ' سرویس' : 'خالی')) : '—'; })()}</b> — با دکمه «همگام‌سازی دستی» کامل/به‌روز می‌شود.</p>
                                 <p class="muted" style="line-height:2.2">
-                                        حالت کاری فعلی: <b>${TPP.offline.state().online ? 'آنلاین' : 'آفلاین'}</b> —
+                                        حالت کاری فعلی: <b>${TPP.offline.state().online ? (TPP.offline.state().api_down ? 'آنلاین — ⚠️ ارتباط با سرور برقرار نیست' : 'آنلاین') : 'آفلاین'}</b> —
                                         در حالت آفلاین، ثبت و ویرایش در دستگاه شما ذخیره و با اتصال اینترنت به‌صورت خودکار اعمال می‌شود؛ تاریخچه تغییرات همواره در سرور حفظ می‌شود.
                                 </p>
                         </div>

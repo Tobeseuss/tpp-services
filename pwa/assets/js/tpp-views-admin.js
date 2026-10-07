@@ -2566,12 +2566,15 @@ TPP.views = TPP.views || {};
                 TPP.app.setTopbar(`<button class="btn btn-primary btn-sm" id="ob-flush">🔄 همگام‌سازی الان</button>`);
 
                 const kindFa = (k) => ({ 'service.create': 'ثبت سرویس', 'service.update': 'ویرایش سرویس', 'service.delete': 'حذف سرویس' }[k] || k);
+                const ost = TPP.offline.state();
+                /* ۱.۳۲.۱ — وضعیت شبکه دیگر فقط «آنلاین» نمی‌گوید؛ قطع ارتباط با سرور صریح نمایش داده می‌شود */
+                const netStatus = !ost.online ? '📴 آفلاین' : (ost.api_down ? '⚠️ آنلاین — ارتباط با سرور برقرار نیست' : '✅ آنلاین');
 
                 document.getElementById('content').innerHTML = `
                 <div class="card">
                         <h3>☁️ وضعیت همگان‌سازی</h3>
                         <table class="kv-table">
-                                <tr><td>وضعیت شبکه</td><td>${TPP.offline.state().online ? '✅ آنلاین' : '📴 آفلاین'}</td></tr>
+                                <tr><td>وضعیت شبکه</td><td>${netStatus}</td></tr>
                                 <tr><td>عملیات در انتظار</td><td>${ops.length} مورد</td></tr>
                                 <tr><td>آخرین همگان‌سازی</td><td>${last ? fmtDate(last) : '—'}</td></tr>
                         </table>
@@ -2593,10 +2596,25 @@ TPP.views = TPP.views || {};
 
                 const fl = document.getElementById('ob-flush');
                 if (fl) fl.addEventListener('click', async () => {
+                        // ۱.۳۲.۱ — پیام «انجام شد» فقط بر اساس نتیجه واقعی ارسال صف؛ دیگر خطا قورت داده نمی‌شود
                         fl.disabled = true;
-                        await TPP.offline.flush(true);
-                        await TPP.offline.cacheAll().catch(() => {});
-                        toast('همگان‌سازی انجام شد.', 'success');
+                        try {
+                                const r = await TPP.offline.flush(true);
+                                if (r && r.ok === false) {
+                                        if (r.skipped) {
+                                                toast('همگام‌سازی دیگری در جریان است — چند لحظه بعد دوباره تلاش کنید.', 'warn');
+                                        } else {
+                                                toast('❌ همگام‌سازی انجام نشد: ' + esc(r.error || 'خطای شبکه') + (r.remaining ? ' — ' + r.remaining + ' عملیات در صف ماند.' : ''), 'error', 10000);
+                                        }
+                                } else if (r && r.remaining > 0) {
+                                        toast('همگام‌سازی انجام شد — ' + r.remaining + ' عملیات هنوز در صف است (پاسخ سرور ناقص بود).', 'warn', 8000);
+                                } else {
+                                        toast('همگام‌سازی انجام شد — صف خالی است.', 'success');
+                                        await TPP.offline.cacheAll().catch(() => {});
+                                }
+                        } catch (e) {
+                                toast('❌ همگام‌سازی انجام نشد: ' + esc((e && e.message) || 'خطای شبکه'), 'error', 10000);
+                        }
                         TPP.views.outbox();
                 });
 
