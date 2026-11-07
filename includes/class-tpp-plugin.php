@@ -66,7 +66,6 @@ final class TPP_Plugin {
         public function history()  { return 'TPP_History'; }  // کلاس ایستا
         public function activity() { return 'TPP_Activity'; } // کلاس ایستا
         public function caps()     { return 'TPP_Capabilities'; } // کلاس ایستا
-        public function progress() { return 'TPP_Progress'; } // کلاس ایستا — ۱.۱۲.۰
         public function backup()   { return 'TPP_Backup'; }  // کلاس ایستا — ۱.۱۵.۰
         public function categories() { return 'TPP_Categories'; } // کلاس ایستا — ۱.۱۹.۰
         public function review()    { return 'TPP_Review'; }    // کلاس ایستا — 1.20.0

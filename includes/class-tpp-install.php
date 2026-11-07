@@ -86,10 +86,7 @@ class TPP_Install {
                         TPP_SMS::seed_default_templates();
                         // ۱.۴.۰ — قالب پیش‌فرض «مشخصات ورود» برای نصب‌های موجود
                         TPP_SMS::seed_missing_templates();
-                        // ۱.۱۲.۰ — ستون‌های پیشرفت دایری روی نصب‌های موجود
-                        TPP_Progress::ensure_columns();
-                        // ۱.۱۴.۰ — مهاجرت: JSON خرابی‌های چندتایی از ستون تکی قدیمی پر می‌شود
-                        TPP_Progress::backfill_failures();
+                        // ۲.۰.۱ — ستون‌های پیشرفت دایری حذف شدند؛ پاک‌سازی داده‌های قدیمی با «🧮 بروزآوری دیتابیس» انجام می‌شود
                         // ۱.۱۴.۰ — جدول گزارش کار روی نصب‌های موجود (dbDelta در ارتقا همیشه جدول جدید نمی‌سازد)
                         TPP_Workreport::ensure_table();
                         // ۱.۲۶.۰ — ستون src_row جدول گزارش کار (ردیف فعالیت مبدأ — مخفی‌سازی فعالیت‌های افزوده‌شده به گزارش)
@@ -172,16 +169,9 @@ class TPP_Install {
                         created_at DATETIME NULL,
                         updated_at DATETIME NULL,
                         version INT UNSIGNED NOT NULL DEFAULT 1,
-                        progress_steps LONGTEXT NULL,
-                        progress_done INT UNSIGNED NOT NULL DEFAULT 0,
-                        progress_failure VARCHAR(20) NOT NULL DEFAULT '',
-                        progress_updated_at DATETIME NULL,
-                        progress_excluded LONGTEXT NULL,
                         PRIMARY KEY  (id),
                         KEY address_id (address_id),
-                        KEY updated (updated_at),
-                        KEY progress_done (progress_done),
-                        KEY progress_failure (progress_failure)
+                        KEY updated (updated_at)
                 ) " . $charset . ';';
 
                 $sql[] = 'CREATE TABLE ' . TPP_DB::table( 'history' ) . " (
@@ -307,8 +297,7 @@ class TPP_Install {
                 } else {
                         dbDelta( $sql );
                 }
-                // ۱.۱۲.۰ — ستون‌های پیشرفت دایری (در هر دو مسیر — dbDelta ایندکس/ستون جدید را همیشه نمی‌سازد)
-                TPP_Progress::ensure_columns();
+                // ۲.۰.۱ — ستون‌های پیشرفت دایری حذف شدند (پاک‌سازی نصب‌های قدیمی: «🧮 بروزآوری دیتابیس»)
                 // ۱.۱۴.۰ — جدول گزارش کار (هر دو مسیر)
                 TPP_Workreport::ensure_table();
                 // ۱.۱۹.۰ — دسته‌بندی‌ها (هر دو مسیر)

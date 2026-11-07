@@ -353,62 +353,14 @@ class TPP_Activity {
                         $r['user_id'] = (int) $r['user_id'];
                 }
                 unset( $r );
-                // ۱.۱۲.۰ — رویدادهای تغییرِ حاوی تغییر پیشرفت دایری در عنوان علامت می‌گیرند
-                self::annotate_progress_titles( $rows );
-                // ۱.۲۵.۰ — اطلاعات سرویس (آدرس/بلوک/پلاک/واحد/دسته/تگ/وضعیت دایری) برای کارت اختصاصی هر سرویس
+                // ۲.۰.۱ — علامت «🚀 پیشرفت دایری» حذف شد (دایری از افزونه خارج شد)
+                // ۱.۲۵.۰ — اطلاعات سرویس (آدرس/بلوک/پلاک/واحد/دسته/تگ) برای کارت اختصاصی هر سرویس
                 self::enrich_service_info( $rows );
                 return array(
                         'total' => $total,
                         'rows'  => self::decorate_views( $rows ),
                         'users' => self::users_facet_all(),
                 );
-        }
-
-        /** علامت «🚀 پیشرفت دایری» روی ردیف‌های تغییری که شامل تغییر مراحل/خرابی سرویس هستند */
-        private static function annotate_progress_titles( array &$rows ) {
-                $h = TPP_DB::table( 'history' );
-                if ( ! $h || empty( $rows ) ) {
-                        return;
-                }
-                $ids = array();
-                foreach ( $rows as $r ) {
-                        if ( 'change' === (string) $r['src'] ) {
-                                $ids[] = (int) $r['id'];
-                        }
-                }
-                if ( ! $ids ) {
-                        return;
-                }
-                $ids_in = implode( ',', array_map( 'intval', $ids ) );
-                $hrows  = TPP_DB::get_results( "SELECT id, changes FROM {$h} WHERE id IN ({$ids_in})", ARRAY_A );
-                $marked = array();
-                foreach ( (array) $hrows as $hr ) {
-                        $changes = json_decode( (string) $hr['changes'], true );
-                        if ( ! is_array( $changes ) ) {
-                                continue;
-                        }
-                        $has = isset( $changes['_progress_steps'] ) || isset( $changes['_progress_failure'] );
-                        if ( ! $has && isset( $changes['fmt'] ) && 2 === (int) $changes['fmt'] && ! empty( $changes['events'] ) && is_array( $changes['events'] ) ) {
-                                foreach ( $changes['events'] as $ev ) {
-                                        if ( is_array( $ev ) && isset( $ev['c'] ) && is_array( $ev['c'] ) && ( isset( $ev['c']['_progress_steps'] ) || isset( $ev['c']['_progress_failure'] ) ) ) {
-                                                $has = true;
-                                                break;
-                                        }
-                                }
-                        }
-                        if ( $has ) {
-                                $marked[ (int) $hr['id'] ] = true;
-                        }
-                }
-                if ( ! $marked ) {
-                        return;
-                }
-                foreach ( $rows as &$r ) {
-                        if ( 'change' === (string) $r['src'] && isset( $marked[ (int) $r['id'] ] ) ) {
-                                $r['title'] .= ' — 🚀 پیشرفت دایری';
-                        }
-                }
-                unset( $r );
         }
 
         /** کاربران حاضر در هر سه جدول (برای فیلتر فید یکپارچه) */
@@ -494,7 +446,6 @@ class TPP_Activity {
         public static function export_csv( $args = array(), $limit = 5000 ) {
                 list( $sql, $params ) = self::unified_sql( $args );
                 $rows = TPP_DB::get_results( $sql . " ORDER BY ts DESC, id DESC LIMIT %d", array_merge( $params, array( (int) $limit ) ) );
-                self::annotate_progress_titles( $rows ); // ۱.۱۲.۰ — همان علامت پیشرفت دایری
 
                 $action_fa = array(
                         'create' => 'ایجاد', 'update' => 'ویرایش', 'delete' => 'حذف', 'merge' => 'ادغام', 'restore' => 'بازگردانی',
@@ -575,7 +526,6 @@ class TPP_Activity {
                         $r['user_id']   = (int) $r['user_id'];
                 }
                 unset( $r );
-                self::annotate_progress_titles( $rows );
                 self::enrich_service_info( $rows );
                 // ۱.۲۶.۰ — ردیف‌هایی که قبلاً به قلم گزارش کار تبدیل شده‌اند علامت می‌خورند (فقط فید گزارش کار — درخواست کاربر)
                 self::annotate_report_added( $rows, $user_id );
@@ -638,11 +588,10 @@ class TPP_Activity {
                                 'unit'          => $a ? (string) ( $a['f_unit'] ?? '' ) : '',
                                 'virtual_number'=> (string) ( $s['f_virtual_number'] ?? '' ),
                         );
-                        // ۱.۲۴.۰ — دسته/تگ + آخرین وضعیت دایری برای سربرگ کارت سرویس در گزارش فعالیت‌ها
+                        // ۱.۲۴.۰ — دسته/تگ برای سربرگ کارت سرویس در گزارش فعالیت‌ها (۲.۰.۱: وضعیت دایری حذف شد)
                         $r['svc'] = array_merge(
                                 $r['svc'],
-                                TPP_Categories::shape( $s ),
-                                array( 'progress' => TPP_Progress::summary( $s ) )
+                                TPP_Categories::shape( $s )
                         );
                 }
                 unset( $r );

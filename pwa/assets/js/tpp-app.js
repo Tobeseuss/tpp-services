@@ -9,78 +9,9 @@ window.TPP = window.TPP || {};
 
 /** نسخه این کد — با نسخه‌ای که سرور در bootstrap می‌فرستد مقایسه می‌شود؛
  *  اگر فرق کنند یعنی پوسته قدیمی در مرورگر مانده و باید تازه شود. */
-TPP.VERSION = '1.32.1';
+TPP.VERSION = '2.0.1';
 
-/* ==================== ۱.۱۳.۰ — منطق آبشاری مراحل دایری (معادل سرور) ====================
-   مراحل وابسته‌اند: تیک مرحله N همه مراحل قبل از N را خودکار تیک می‌زند؛
-   «مگر مراحل ردشده» که بعد از تیک‌خوردن تیکشان توسط کاربر برداشته شده (skipped).
-   برداشتن تیکِ مرحله‌ای که مرحله بعدی تیک دارد → «ردشده»؛ اگر آخرین مرحله تیک‌دار بود → عقب‌گرد ساده. */
-TPP.progressUtil = (function () {
-        function catalog() {
-                const st = TPP.app && TPP.app.state ? TPP.app.state() : null;
-                const p = st && st.progress;
-                return (p && p.steps && Object.keys(p.steps).length) ? p : { steps: {}, failures: {} };
-        }
-        function keys(cat) {
-                cat = cat || catalog();
-                return Object.keys(cat.steps || {});
-        }
-        /** معادل TPP_Progress::apply سرور — ورودی: {steps, skipped, failure, reset_skips} + رکورد قبلی {steps, excluded} */
-        function apply(input, old) {
-                const cat = catalog();
-                const K = keys(cat);
-                const checked = new Set((input.steps || []).filter((k) => K.indexOf(k) !== -1));
-                const inputSkip = new Set((input.skipped || []).filter((k) => K.indexOf(k) !== -1));
-                const oldSteps = new Set((old && old.steps || []).filter((k) => K.indexOf(k) !== -1));
-                const oldExcl = new Set((old && old.excluded || []).filter((k) => K.indexOf(k) !== -1));
-                const reset = !!(input.reset_skips);
-
-                const excluded = new Set();
-                if (!reset) {
-                        oldExcl.forEach((k) => excluded.add(k));
-                        inputSkip.forEach((k) => excluded.add(k));
-                        oldSteps.forEach((x) => {
-                                if (!checked.has(x)) {
-                                        const xi = K.indexOf(x);
-                                        let later = false;
-                                        checked.forEach((y) => { if (K.indexOf(y) > xi) later = true; });
-                                        if (later) excluded.add(x);
-                                }
-                        });
-                        checked.forEach((k) => excluded.delete(k)); // تیک دوباره = رفع ردشدگی
-                }
-
-                let maxIdx = -1;
-                checked.forEach((s) => { const i = K.indexOf(s); if (i > maxIdx) maxIdx = i; });
-                const steps = [];
-                for (let i = 0; i <= maxIdx; i++) {
-                        if (!excluded.has(K[i])) steps.push(K[i]);
-                }
-                const excludedArr = K.filter((k) => excluded.has(k));
-                return { steps, excluded: excludedArr, done: steps.length, total: K.length, pct: K.length ? Math.round(steps.length * 100 / K.length) : 0 };
-        }
-        /** خلاصه محلی از steps/excluded/failures (برای کش آفلاین) — ۱.۱۴.۰: خرابی‌های چندتایی */
-        function summary(prog) {
-                const cat = catalog();
-                const K = keys(cat);
-                const steps = (prog.steps || []).filter((k) => K.indexOf(k) !== -1);
-                const excluded = (prog.excluded || []).filter((k) => K.indexOf(k) !== -1);
-                const failKeys = (prog.failures && prog.failures.length) ? prog.failures.slice() : (prog.failure ? [prog.failure] : []);
-                const failLabels = failKeys.map((k) => (cat.failures || {})[k] || k);
-                const done = steps.length;
-                const last = done ? steps[done - 1] : '';
-                return {
-                        steps, excluded, excluded_count: excluded.length,
-                        failures: failKeys, failures_labels: failLabels,
-                        failure: failKeys[0] || '', failure_label: failLabels[0] || '',
-                        done, total: K.length,
-                        pct: K.length ? Math.round(done * 100 / K.length) : 0,
-                        status: (done >= K.length && K.length) ? 'done' : (done > 0 ? 'progress' : 'none'),
-                        last_step: last, last_label: last ? cat.steps[last] : ''
-                };
-        }
-        return { catalog, keys, apply, summary };
-})();
+// ۲.۰.۱ — ماژول TPP.progressUtil و کاتالوگ «پیشرفت دایری» کامل حذف شدند.
 
 TPP.app = (function () {
 
@@ -662,7 +593,7 @@ TPP.app = (function () {
                 state.schema = payload.schema || { address: [], service: [] };
                 state.settings = payload.settings || state.settings;
                 state.sms = payload.sms || state.sms;
-                state.progress = payload.progress || null; // ۱.۱۲.۰ — مراحل دایری + خرابی‌ها از سرور
+                // ۲.۰.۱ — state.progress حذف شد (کاتالوگ دایری دیگر از سرور نمی‌آید)
                 state.site = payload.site || '';
                 state.loginUrl = payload.login_url || state.loginUrl;
                 state.logoutUrl = payload.logout_url || '';
@@ -670,7 +601,7 @@ TPP.app = (function () {
                 state.env = payload.env || null; // ۱.۳۲.۰ — وضعیت SSL/HTTP برای کارت وضعیت اتصال
 
                 // ذخیره وضعیت برای بوت آفلاین
-                TPP_IDB.set('kv', 'user_state', { user: state.user, caps: state.caps, isManager: state.isManager, isWPAdmin: state.isWPAdmin, schema: state.schema, settings: state.settings, sms: state.sms, progress: state.progress, site: state.site, loginUrl: state.loginUrl, logoutUrl: state.logoutUrl });
+                TPP_IDB.set('kv', 'user_state', { user: state.user, caps: state.caps, isManager: state.isManager, isWPAdmin: state.isWPAdmin, schema: state.schema, settings: state.settings, sms: state.sms, site: state.site, loginUrl: state.loginUrl, logoutUrl: state.logoutUrl });
 
                 els.loginScreen.classList.add('hidden');
                 els.app.classList.remove('hidden');
@@ -1018,17 +949,6 @@ TPP.app = (function () {
                         <div class="stat warn"><div class="num">${pending}</div><div class="lbl">در صف همگام‌سازی</div></div>
                 </div>
 
-                ${stats.progress ? `
-                <div class="card prog-dash">
-                        <h3>🚀 وضعیت دایری سرویس‌ها <span class="muted">(برای مشاهده فهرست روی هر کادر کلیک کنید)</span></h3>
-                        <div class="stat-grid prog-stat-grid">
-                                <div class="stat prog-click" data-prog="progress" title="سرویس‌هایی که دایری‌شان آغاز شده اما کامل نشده"><div class="num">${faNum(stats.progress.progress || 0)}</div><div class="lbl">🚧 در حال دایری</div></div>
-                                <div class="stat ok prog-click" data-prog="done" title="همه ۱۶ مرحله دایری تکمیل شده"><div class="num">${faNum(stats.progress.done || 0)}</div><div class="lbl">✅ دایری کامل</div></div>
-                                <div class="stat err prog-click" data-prog="fail" title="خرابی اعلام‌شده (LOS / قطع تلفن / قطع اینترنت / سایر)"><div class="num">${faNum(stats.progress.fail || 0)}</div><div class="lbl">❌ خرابی اعلام‌شده</div></div>
-                                <div class="stat prog-click" data-prog="none" title="هیچ مرحله دایری شروع نشده"><div class="num">${faNum(stats.progress.none || 0)}</div><div class="lbl">⏳ شروع نشده</div></div>
-                        </div>
-                </div>` : ''}
-
                 <div class="grid-2">
                         <div class="card">
                                 <h3>دسترسی سریع</h3>
@@ -1061,16 +981,7 @@ TPP.app = (function () {
                 const qn = document.getElementById('qa-new');
                 if (qn) qn.addEventListener('click', () => go('service/new'));
                 document.getElementById('qa-search').addEventListener('click', () => go('services'));
-                // ۱.۱۲.۰ — کلیک روی کادر وضعیت دایری → فهرست سرویس‌ها با همان فیلتر
-                document.querySelectorAll('.prog-click[data-prog]').forEach((el) => {
-                        el.addEventListener('click', () => {
-                                searchState.prog = { status: el.getAttribute('data-prog') || '', step: '', stepState: 'done' };
-                                searchState.query = '';
-                                searchState.filters = {};
-                                searchState.page = 1;
-                                go('services');
-                        });
-                });
+                // ۲.۰.۱ — کادرهای وضعیت دایری داشبورد حذف شدند
                 const qi = document.getElementById('qa-import'); if (qi) qi.addEventListener('click', () => go('import'));
                 const qe = document.getElementById('qa-export'); if (qe) qe.addEventListener('click', () => go('export'));
                 document.getElementById('qa-sync').addEventListener('click', async () => {
@@ -1081,39 +992,7 @@ TPP.app = (function () {
 
         /* ==================== نما: سرویس‌ها (جستجوی زنده) ==================== */
 
-        const searchState = { query: '', filters: {}, page: 1, perPage: 25, group: false, sort: 'updated', order: 'desc', result: null, selected: new Set(), updFrom: '', updTo: '', prog: { status: '', step: '', stepState: 'done' }, cat: '', tags: [] }; // ۱.۱۹.۰ — cat/tags
-
-        /* ۱.۱۲.۰ — مراحل دایری برای فیلتر/نشان‌ها (از bootstrap؛ fallback خالی) */
-        function progressSteps() {
-                const p = state.progress && state.progress.steps;
-                return (p && Object.keys(p).length) ? p : {};
-        }
-
-        /** نشان وضعیت دایری برای کارت سرویس: آخرین مرحله به رنگ سبز یا خرابی‌ها به رنگ قرمز — ۱.۱۴.۰: چند خرابی */
-        function progressBadgeHtml(r) {
-                const p = r && r.progress;
-                if (!p) return '';
-                const total = p.total || 16;
-                const FAIL_SHORT = { los: 'LOS (قطع کامل)', phone: 'قطع تلفن', internet: 'قطع اینترنت', other: 'سایر خرابی' };
-                const skipped = p.excluded_count ? ' · ' + faNum(p.excluded_count) + ' ردشده' : ''; // ۱.۱۳.۰
-                const fails = (p.failures && p.failures.length) ? p.failures : (p.failure ? [p.failure] : []);
-                if (fails.length) {
-                        const labels = (p.failures_labels && p.failures_labels.length ? p.failures_labels : fails.map((k) => (p.failure_label && k === p.failure ? p.failure_label : FAIL_SHORT[k] || k)));
-                        const title = labels.join('، ');
-                        const txt = fails.length > 1
-                                ? ('❌ ' + (labels[0] && labels[0].length > 18 ? labels[0].slice(0, 17) + '…' : (FAIL_SHORT[fails[0]] || fails[0])) + ' +' + faNum(fails.length - 1))
-                                : ('❌ ' + (FAIL_SHORT[fails[0]] || fails[0]));
-                        return `<span class="chip err svc-prog-badge fail" title="${esc(title)}">${esc(txt)}</span>`;
-                }
-                if (p.done > 0 && p.last_label) {
-                        const short = String(p.last_label).length > 26 ? String(p.last_label).slice(0, 25) + '…' : String(p.last_label);
-                        return `<span class="chip ok svc-prog-badge" title="آخرین مرحله دایری: ${esc(p.last_label)} (${faNum(p.done)} از ${faNum(total)} مرحله)${skipped ? ' — ' + faNum(p.excluded_count) + ' مرحله ردشده توسط کاربر' : ''}">✅ ${esc(short)}${esc(skipped)}</span>`;
-                }
-                if (p.done >= total && total > 0) {
-                        return '<span class="chip ok svc-prog-badge">✅ دایری کامل</span>';
-                }
-                return '<span class="chip svc-prog-badge none" title="هیچ مرحله دایری تکمیل نشده">⏳ دایری شروع نشده</span>';
-        }
+        const searchState = { query: '', filters: {}, page: 1, perPage: 25, group: false, sort: 'updated', order: 'desc', result: null, selected: new Set(), updFrom: '', updTo: '', cat: '', tags: [] }; // ۱.۱۹.۰ — cat/tags — ۲.۰.۱: prog حذف شد
 
         /** همگام‌سازی مجموعه انتخاب با چک‌باکس */
         function syncSel(id, checked) {
@@ -1125,69 +1004,29 @@ TPP.app = (function () {
         function updateBulkBar() {
                 const cnt = document.getElementById('sel-count');
                 const btn = document.getElementById('btn-bulk-delete');
-                const prog = document.getElementById('btn-bulk-progress');
+                const fld = document.getElementById('btn-bulk-fields');
                 if (!cnt) return;
                 const n = searchState.selected.size;
                 cnt.textContent = n;
                 if (btn) btn.disabled = n === 0;
-                if (prog) prog.disabled = n === 0;
+                if (fld) fld.disabled = n === 0;
         }
 
-        /* ==================== ۱.۱۳.۰ — ویرایش گروهی/تکی پیشرفت دایری و وضعیت ==================== */
+        /* ==================== ۲.۰.۱ — ویرایش گروهی/تکی فیلدهای سرویس ====================
+           (نسخه‌های ۱.۱۲ تا ۱.۳۲ «پیشرفت دایری» را هم تغییر می‌دادند — با حذف کامل دایری،
+            این دیالوگ فقط فیلدهای سرویس را تغییر می‌دهد؛ مثلاً آخرین وضعیت اینترنت/تلفن.) */
 
-        /** دیالوگ تغییر گروهی/تکی — ids: شناسه‌ها؛ single: حالت تکی (از دکمه ⚡ کارت) */
+        /** دیالوگ تغییر گروهی/تکی فیلد — ids: شناسه‌ها؛ single: حالت تکی (از دکمه ⚡ کارت) */
         async function openBulkEdit(ids, single) {
                 const idsN = ids.map((i) => parseInt(i, 10)).filter((i) => i > 0);
                 if (!idsN.length) return;
-                const cat = TPP.progressUtil.catalog();
-                const stepsCat = cat.steps || {};
-                const failuresCat = cat.failures || {};
-                const stepKeys = Object.keys(stepsCat);
                 const svcFields = (state.schema.service || []).filter((f) => !f.is_sensitive);
-
-                // وضعیت فعلی سرویس در حالت تکی — برای پیش‌نمایش زنده
-                let curRow = null;
-                if (single) {
-                        const rows = (searchState.result && searchState.result.rows) || [];
-                        curRow = rows.find((r) => parseInt(r.id, 10) === idsN[0]) || null;
-                }
-                const curProg = curRow && curRow.progress ? curRow.progress : null;
-
-                const stepOptions = stepKeys.map((k, i) => `<option value="${esc(k)}">${faNum(i + 1)}. ${esc(stepsCat[k])}</option>`).join('');
-                const stepChips = stepKeys.map((k, i) => `<button type="button" class="bstep-chip" data-bk="${esc(k)}" title="${esc(stepsCat[k])}">${faNum(i + 1)}</button>`).join('');
-                // ۱.۱۴.۰ — خرابی‌ها به‌صورت چندانتخابی (چند خرابی همزمان، مثلاً «سایر» + «اینترنت قطع است»)
-                const curFails = curProg ? ((curProg.failures && curProg.failures.length) ? curProg.failures : (curProg.failure ? [curProg.failure] : [])) : [];
-                const failBoxes = Object.entries(failuresCat).map(([k, v]) => `
-                        <label class="checkbox-row bfail-row${curFails.indexOf(k) !== -1 ? ' cur' : ''}" title="${curFails.indexOf(k) !== -1 ? 'فعلاً فعال است' : ''}">
-                                <input type="checkbox" class="bfail" data-bfail="${esc(k)}"${curFails.indexOf(k) !== -1 ? ' checked' : ''}> ${esc(v)}
-                        </label>`).join('');
                 const fieldOptions = svcFields.map((f) => `<option value="${esc(f.slug)}">${esc(f.label)}</option>`).join('');
 
                 const m = modal(
-                        '<div class="modal-head"><h3>' + (single ? '⚡ ویرایش سریع سرویس #' + faNum(idsN[0]) : '🚀 تغییر گروهی پیشرفت و وضعیت') + '</h3><button class="modal-close" data-close>×</button></div>' +
+                        '<div class="modal-head"><h3>' + (single ? '⚡ ویرایش سریع سرویس #' + faNum(idsN[0]) : '🚀 تغییر گروهی فیلدها') + '</h3><button class="modal-close" data-close>×</button></div>' +
                         '<div class="modal-body bulk-edit-body">' +
                         (single ? '' : `<p class="muted">این تغییرات روی <b>${faNum(idsN.length)}</b> سرویس انتخاب‌شده اعمال می‌شود و برای هر سرویس در تاریخچه/گزارش فعالیت ثبت می‌شود.</p>`) +
-                        (curProg ? `<div class="bulk-cur">وضعیت فعلی: <b>${faNum(curProg.done || 0)} از ${faNum(curProg.total || 16)}</b> مرحله${curFails.length ? ' — <span class="chip err">❌ ' + esc((curProg.failures_labels && curProg.failures_labels.length ? curProg.failures_labels : curFails.map((k) => failuresCat[k] || k)).join('، ')) + '</span>' : ''}${curProg.excluded_count ? ' — <span class="muted">' + faNum(curProg.excluded_count) + ' مرحله ردشده</span>' : ''}</div>` : '') +
-                        '<div class="bulk-section">' +
-                        '<div class="bulk-sec-title">🚀 پیشرفت دایری</div>' +
-                        '<label class="radio-row"><input type="radio" name="bmode" value="" checked> بدون تغییر مراحل</label>' +
-                        '<label class="radio-row"><input type="radio" name="bmode" value="up_to"> تنظیم تا مرحله… (آبشاری — مراحل قبل خودکار تیک می‌خورند)</label>' +
-                        '<div class="bulk-sub" id="b-upto"><select id="b-step" class="btn"><option value="all">✅ همه ۱۶ مرحله (دایری کامل)</option>' + stepOptions + '</select></div>' +
-                        '<label class="radio-row"><input type="radio" name="bmode" value="add"> افزودن مرحله(ها)…</label>' +
-                        '<div class="bulk-sub hidden" id="b-add"><div class="bstep-chips">' + stepChips + '</div><div class="hint">شماره مراحل موردنظر را لمس/کلیک کنید (آبشار اعمال می‌شود: افزودن مرحله N مراحل قبل را هم تیک می‌زند)</div></div>' +
-                        '<label class="radio-row"><input type="radio" name="bmode" value="remove"> حذف مرحله(ها)…</label>' +
-                        '<div class="bulk-sub hidden" id="b-remove"><div class="bstep-chips">' + stepChips + '</div><div class="hint">حذف مرحله‌ای که مرحله بعدی تیک دارد → «ردشده» می‌شود تا دوباره خودکار تیک نخورد</div></div>' +
-                        '<label class="radio-row"><input type="radio" name="bmode" value="clear"> پاک‌کردن همه مراحل (شروع تازه)</label>' +
-                        '<label class="checkbox-row" id="b-keepline"><input type="checkbox" id="b-keep" checked> مراحل «ردشده توسط کاربر» را نگه دار (پرش خودکار از آن‌ها بگذرد)</label>' +
-                        '</div>' +
-                        '<div class="bulk-section">' +
-                        '<div class="bulk-sec-title">⚠️ وضعیت خرابی (چند مورد را می‌توان همزمان علامت زد)</div>' +
-                        '<label class="checkbox-row"><input type="checkbox" id="b-fail-apply"> تغییر خرابی‌ها</label>' +
-                        '<div class="bulk-sub" id="b-fail-box">' +
-                        '<div class="bfail-opts">' + failBoxes + '</div>' +
-                        '<div class="hint">تیک‌دارها = خرابی‌های اعلام‌شده؛ هیچ تیکی نماند = رفع همه خرابی‌ها. بدون تیک «تغییر خرابی‌ها» = بدون تغییر.</div>' +
-                        '</div>' +
-                        '</div>' +
                         '<div class="bulk-section">' +
                         '<div class="bulk-sec-title">📝 تغییر فیلد سرویس (مثلاً آخرین وضعیت اینترنت/تلفن)</div>' +
                         '<div class="grid-2">' +
@@ -1197,94 +1036,32 @@ TPP.app = (function () {
                         '</div>' +
                         '<div id="b-preview" class="bulk-preview"></div>' +
                         '</div>' +
-                        '<div class="modal-foot"><button class="btn" data-close>انصراف</button><button class="btn btn-primary" id="b-apply">✅ اعمال</button></div>',
+                        '<div class="modal-foot"><button class="btn" data-close>انصراف</button><button class="btn btn-primary" id="b-apply" disabled>✅ اعمال</button></div>',
                         { static: true }
                 );
 
                 const el = m.el;
-                const modeRadios = () => el.querySelector('input[name="bmode"]:checked');
-                const chipsOf = (wrap) => Array.from(wrap.querySelectorAll('.bstep-chip.on')).map((c) => c.getAttribute('data-bk'));
-                const failApply = () => el.querySelector('#b-fail-apply');
-                const pickedFails = () => Array.from(el.querySelectorAll('input.bfail:checked')).map((c) => c.getAttribute('data-bfail'));
-
                 const refresh = () => {
-                        const mode = modeRadios() ? modeRadios().value : '';
-                        el.querySelector('#b-upto').classList.toggle('hidden', mode !== 'up_to');
-                        el.querySelector('#b-add').classList.toggle('hidden', mode !== 'add');
-                        el.querySelector('#b-remove').classList.toggle('hidden', mode !== 'remove');
-                        el.querySelector('#b-keepline').classList.toggle('hidden', mode === 'clear' || mode === '');
-                        el.querySelector('#b-fail-box').classList.toggle('hidden', !failApply().checked); // ۱.۱۴.۰
-                        // پیش‌نمایش
-                        const pv = el.querySelector('#b-preview');
-                        const parts = [];
-                        if (mode === 'up_to') {
-                                const k = el.querySelector('#b-step').value;
-                                const n = k === 'all' ? stepKeys.length : (stepKeys.indexOf(k) + 1);
-                                parts.push('مراحل: <b>' + faNum(n) + ' از ' + faNum(stepKeys.length) + '</b> تیک می‌خورد' + (el.querySelector('#b-keep').checked ? ' (به‌جز ردشده‌ها)' : ''));
-                        } else if (mode === 'add') {
-                                const picked = chipsOf(el.querySelector('#b-add'));
-                                parts.push(picked.length ? 'افزودن: <b>' + picked.map((k) => faNum(stepKeys.indexOf(k) + 1)).join('، ') + '</b> (آبشاری)' : 'مرحله‌ای انتخاب نشده');
-                        } else if (mode === 'remove') {
-                                const picked = chipsOf(el.querySelector('#b-remove'));
-                                parts.push(picked.length ? 'حذف: <b>' + picked.map((k) => faNum(stepKeys.indexOf(k) + 1)).join('، ') + '</b>' : 'مرحله‌ای انتخاب نشده');
-                        } else if (mode === 'clear') {
-                                parts.push('همه مراحل و خرابی‌های ردشده <b>پاک</b> می‌شود');
-                        }
-                        if (failApply().checked) {
-                                const f = pickedFails();
-                                parts.push(f.length ? 'خرابی‌ها: <b>' + f.map((k) => esc(failuresCat[k] || k)).join('، ') + '</b>' : 'خرابی: <b>رفع همه</b>');
-                        }
                         const fl = el.querySelector('#b-field').value;
-                        if (fl) parts.push('فیلد «' + esc((svcFields.find((x) => x.slug === fl) || {}).label || fl) + '» = «' + esc(el.querySelector('#b-value').value) + '»');
-                        if (!parts.length) parts.push('هیچ عملیاتی انتخاب نشده است');
-                        pv.innerHTML = parts.join('<br>');
-                        el.querySelector('#b-apply').disabled = !parts.length || parts[0] === 'هیچ عملیاتی انتخاب نشده است';
+                        const pv = el.querySelector('#b-preview');
+                        if (fl) {
+                                pv.innerHTML = 'فیلد «' + esc((svcFields.find((x) => x.slug === fl) || {}).label || fl) + '» = «' + esc(el.querySelector('#b-value').value) + '»';
+                                el.querySelector('#b-apply').disabled = false;
+                        } else {
+                                pv.innerHTML = 'هیچ عملیاتی انتخاب نشده است';
+                                el.querySelector('#b-apply').disabled = true;
+                        }
                 };
-
-                el.querySelectorAll('input[name="bmode"]').forEach((r) => r.addEventListener('change', refresh));
-                el.querySelector('#b-step').addEventListener('change', refresh);
-                el.querySelector('#b-keep').addEventListener('change', refresh);
-                el.querySelector('#b-fail-apply').addEventListener('change', refresh);
-                el.querySelectorAll('input.bfail').forEach((cb) => cb.addEventListener('change', refresh));
                 el.querySelector('#b-field').addEventListener('change', refresh);
                 el.querySelector('#b-value').addEventListener('input', refresh);
-                el.querySelectorAll('.bstep-chips').forEach((wrap) => wrap.addEventListener('click', (e) => {
-                        const c = e.target.closest('.bstep-chip');
-                        if (!c) return;
-                        c.classList.toggle('on');
-                        refresh();
-                }));
                 refresh();
 
                 el.querySelector('#b-apply').addEventListener('click', async () => {
-                        const mode = modeRadios() ? modeRadios().value : '';
-                        const keep = el.querySelector('#b-keep').checked;
-                        const doFails = failApply().checked;
-                        const failList = pickedFails();
                         const fieldSlug = el.querySelector('#b-field').value;
                         const fieldValue = el.querySelector('#b-value').value;
-
-                        const payload = { ids: idsN, progress: {} };
-                        if (mode) payload.progress.mode = mode;
-                        if (mode === 'up_to') payload.progress.step = el.querySelector('#b-step').value;
-                        if (mode === 'add' || mode === 'remove') {
-                                const picked = chipsOf(el.querySelector(mode === 'add' ? '#b-add' : '#b-remove'));
-                                if (!picked.length) { toast('مرحله‌ای انتخاب نشده است.', 'warn'); return; }
-                                payload.progress.steps = picked;
-                        }
-                        if (mode && mode !== 'clear') payload.progress.skipped_policy = keep ? 'keep' : 'reset';
-                        if (doFails) payload.progress.failures = failList; // ۱.۱۴.۰ — آرایه خرابی‌ها (خالی = رفع همه)
-                        if (fieldSlug) payload.service = { [fieldSlug]: fieldValue };
-
-                        // پیش‌نمایش تایید
-                        const desc = [];
-                        if (mode === 'up_to') desc.push('تنظیم مراحل تا «' + (el.querySelector('#b-step').value === 'all' ? 'دایری کامل' : stepsCat[el.querySelector('#b-step').value]) + '»');
-                        if (mode === 'add') desc.push('افزودن مراحل ' + chipsOf(el.querySelector('#b-add')).map((k) => faNum(stepKeys.indexOf(k) + 1)).join('،'));
-                        if (mode === 'remove') desc.push('حذف مراحل ' + chipsOf(el.querySelector('#b-remove')).map((k) => faNum(stepKeys.indexOf(k) + 1)).join('،'));
-                        if (mode === 'clear') desc.push('پاک‌کردن همه مراحل');
-                        if (doFails) desc.push(failList.length ? 'اعلام خرابی‌ها: ' + failList.map((k) => failuresCat[k] || k).join('، ') : 'رفع همه خرابی‌ها');
-                        if (fieldSlug) desc.push('فیلد «' + ((svcFields.find((x) => x.slug === fieldSlug) || {}).label || fieldSlug) + '» = «' + fieldValue + '»');
-                        const ok = await confirmBox('اعمال روی <b>' + faNum(idsN.length) + '</b> سرویس؟<br><span class="muted">' + desc.map((d) => '• ' + esc(d)).join('<br>') + '</span>', 'اعمال تغییرات');
+                        if (!fieldSlug) return;
+                        const payload = { ids: idsN, service: { [fieldSlug]: fieldValue } };
+                        const ok = await confirmBox('اعمال روی <b>' + faNum(idsN.length) + '</b> سرویس؟<br><span class="muted">• فیلد «' + esc((svcFields.find((x) => x.slug === fieldSlug) || {}).label || fieldSlug) + '» = «' + esc(fieldValue) + '»</span>', 'اعمال تغییرات');
                         if (!ok) return;
 
                         m.close();
@@ -1307,10 +1084,8 @@ TPP.app = (function () {
                         const s = (res && res.summary) || { applied: idsN.length };
                         toast('✅ ' + faNum(s.applied || 0) + ' سرویس به‌روزرس شد' + (s.unchanged ? ' — ' + faNum(s.unchanged) + ' بدون تغییر' : '') + (online ? '' : ' (در صف همگام‌سازی)'), 'success', 6000);
 
-                        // به‌روزرسانی کش محلی (IDB) + بازرند کارت‌ها بدون درخواست مجدد سرور
-                        const perId = {};
-                        if (res && Array.isArray(res.results)) res.results.forEach((r) => { if (r && r.progress) perId[r.id] = r.progress; });
-                        await updateLocalProgress(idsN, perId, payload);
+                        // به‌روزرسانی کش محلی (IDB) — ۲.۰.۱: فقط فیلدها (بدون محاسبه دایری)
+                        await updateLocalRows(idsN, payload);
                         if (online) { await doSearch(); }
                         else { renderResults(document.getElementById('results-area'), searchState.result); }
                 } catch (e) {
@@ -1318,58 +1093,16 @@ TPP.app = (function () {
                 }
         }
 
-        /** کش محلی: اعمال محاسبه آبشاری روی ردیف‌های IDB + نتیجه جستجوی فعلی */
-        async function updateLocalProgress(idsN, perId, payload) {
-                const prog = payload.progress || {};
+        /** کش محلی: اعمال فیلدهای تغییرگروهی روی ردیف‌های IDB (بدون نتیجه جستجو — doSearch بازرند می‌کند) */
+        async function updateLocalRows(idsN, payload) {
+                if (!payload.service) return;
                 for (const id of idsN) {
                         try {
                                 const row = await TPP_IDB.get('services', id);
                                 if (!row) continue;
-                                if (perId[id]) {
-                                        row.progress = perId[id];
-                                } else if (row.progress) {
-                                        // محاسبه محلی معادل سرور (آفلاین)
-                                        const old = { steps: row.progress.steps || [], excluded: row.progress.excluded || [] };
-                                        // ۱.۱۴.۰ — خرابی‌های چندتایی: failures آرایه؛ failure قدیمی هم تبدیل می‌شود
-                                        const newFails = (prog.failures !== undefined && prog.failures !== null)
-                                                ? prog.failures
-                                                : (prog.failure !== undefined && prog.failure !== null ? [prog.failure] : null);
-                                        const keepFails = (row.progress.failures && row.progress.failures.length) ? row.progress.failures : (row.progress.failure ? [row.progress.failure] : []);
-                                        let input = null;
-                                        if (prog.mode === 'up_to') {
-                                                const K = TPP.progressUtil.keys();
-                                                let target = prog.step === 'all' ? K : K.slice(0, K.indexOf(prog.step) + 1);
-                                                // هم‌گام با سرور (۱.۱۳.۰): با سیاست keep مراحل ردشده از فهرست هدف حذف می‌شوند
-                                                // تا «تیک دوباره» تلقی نشوند و ردشده بمانند
-                                                if (prog.skipped_policy !== 'reset') {
-                                                        target = target.filter((k) => (old.excluded || []).indexOf(k) === -1);
-                                                }
-                                                input = { steps: target, skipped: prog.skipped_policy === 'reset' ? [] : old.excluded, reset_skips: prog.skipped_policy === 'reset' };
-                                        } else if (prog.mode === 'add') {
-                                                input = { steps: Array.from(new Set(old.steps.concat(prog.steps || []))), skipped: prog.skipped_policy === 'reset' ? [] : old.excluded };
-                                        } else if (prog.mode === 'remove') {
-                                                input = { steps: old.steps.filter((k) => (prog.steps || []).indexOf(k) === -1), skipped: old.excluded };
-                                        } else if (prog.mode === 'clear') {
-                                                input = { steps: [], skipped: [], reset_skips: true };
-                                        }
-                                        if (input) {
-                                                const applied = TPP.progressUtil.apply(input, old);
-                                                row.progress = TPP.progressUtil.summary(Object.assign(applied, { failures: newFails !== null ? newFails : keepFails }));
-                                        } else if (newFails !== null) {
-                                                row.progress = TPP.progressUtil.summary(Object.assign({}, row.progress, { failures: newFails }));
-                                        }
-                                        if (payload.service) {
-                                                Object.assign(row, payload.service);
-                                        }
-                                }
+                                Object.assign(row, payload.service);
                                 await TPP_IDB.set('services', id, row);
                         } catch (e) { /* ردیف در کش نیست */ }
-                        // نتیجه جستجوی فعلی هم زنده نوسازی شود
-                        const cur = searchState.result;
-                        if (cur && Array.isArray(cur.rows)) {
-                                const r = cur.rows.find((x) => parseInt(x.id, 10) === id);
-                                if (r && r.progress && perId[id]) r.progress = perId[id];
-                        }
                 }
         }
 
@@ -1425,34 +1158,12 @@ TPP.app = (function () {
                         ${(can('tpp_delete_services') || canQuick()) ? `
                         <div class="bulk-bar">
                                 <label class="checkbox-row"><input type="checkbox" id="select-all"> <b>انتخاب همه در این صفحه</b></label>
-                                ${canQuick() ? '<button class="btn btn-primary" id="btn-bulk-progress" disabled title="تغییر گروهی/تکی پیشرفت دایری، خرابی و وضعیت سرویس‌های انتخاب‌شده">🚀 تغییر پیشرفت/وضعیت (<span id="sel-count">0</span>)</button>' : '<span class="chip" id="sel-count">0 انتخاب</span>'}
+                                ${canQuick() ? '<button class="btn btn-primary" id="btn-bulk-fields" disabled title="تغییر گروهی/تکی فیلدهای سرویس‌های انتخاب‌شده">🚀 تغییر گروهی فیلدها (<span id="sel-count">0</span>)</button>' : '<span class="chip" id="sel-count">0 انتخاب</span>'}
                                 ${can('tpp_delete_services') ? '<button class="btn btn-danger" id="btn-bulk-delete" disabled>🗑 حذف انتخاب‌شده‌ها</button>' : ''}
-                                <span class="muted">${canQuick() ? 'تغییر گروهی پیشرفت دایری/وضعیت با تیک‌خوردن خودکار مراحل وابسته — یا ⚡ روی هر کارت برای ویرایش سریع همان سرویس.' : ''}${can('tpp_delete_services') ? ' با حذف سرویس، تاریخچه آن هم کامل پاک می‌شود.' : ''}</span>
+                                <span class="muted">${canQuick() ? 'تغییر گروهی فیلدهای سرویس — یا ⚡ روی هر کارت برای ویرایش سریع همان سرویس.' : ''}${can('tpp_delete_services') ? ' با حذف سرویس، تاریخچه آن هم کامل پاک می‌شود.' : ''}</span>
                         </div>` : ''}
                         <div class="filters-panel hidden" id="filters-panel">
                                 <div class="filters-title"><span>فیلتر بر اساس فیلدهای دلخواه:</span><button class="btn btn-sm" id="clear-filters">پاک‌کردن فیلترها</button></div>
-                                <div class="prog-filter" id="prog-filter">
-                                        <label class="pf-label">🚀 وضعیت دایری سرویس:</label>
-                                        <select id="prog-status" class="btn" title="فیلتر سرویس‌ها بر اساس وضعیت پیشرفت دایری یا خرابی اعلام‌شده">
-                                                <option value="">همه وضعیت‌ها</option>
-                                                <option value="progress">🚧 در حال دایری</option>
-                                                <option value="done">✅ دایری کامل</option>
-                                                <option value="none">⏳ شروع نشده</option>
-                                                <option value="fail">❌ خرابی اعلام‌شده (همه)</option>
-                                                <option value="fail_los">❌ LOS — اینترنت و تلفن قطع</option>
-                                                <option value="fail_phone">❌ قطع تلفن</option>
-                                                <option value="fail_internet">❌ قطع اینترنت</option>
-                                                <option value="fail_other">❌ سایر خرابی</option>
-                                        </select>
-                                        <span id="prog-step-wrap" class="hidden">
-                                                <label class="pf-label">مرحله:</label>
-                                                <select id="prog-step" class="btn" title="سرویس‌هایی که این مرحله را تکمیل کرده‌اند یا نه">
-                                                        <option value="">— همه —</option>
-                                                </select>
-                                                <label class="checkbox-row" title="سرویس‌هایی که مرحله انتخابی را انجام داده‌اند"><input type="radio" name="prog-step-state" value="done" checked> انجام‌شده</label>
-                                                <label class="checkbox-row" title="سرویس‌هایی که مرحله انتخابی هنوز کامل نشده (کار باقی‌مانده)"><input type="radio" name="prog-step-state" value="todo"> انجام‌نشده</label>
-                                        </span>
-                                </div>
                                 <div class="filters-grid" id="filters-grid"></div>
                                 <div class="prog-filter" id="cat-filter" style="margin-top:10px">
                                         <label class="pf-label">🏷 دسته‌بندی پروژه:</label>
@@ -1515,33 +1226,7 @@ TPP.app = (function () {
                 const input = document.getElementById('live-search');
                 const spinner = document.getElementById('search-spinner');
 
-                /* ---------- ۱.۱۲.۰: فیلتر وضعیت دایری (نوع + مرحله خاص) ---------- */
-                const progStatusSel = document.getElementById('prog-status');
-                const progStepSel = document.getElementById('prog-step');
-                const progStepWrap = document.getElementById('prog-step-wrap');
-                const stepsCatalog = progressSteps();
-                if (progStepSel && Object.keys(stepsCatalog).length) {
-                        progStepWrap.classList.remove('hidden');
-                        progStepSel.innerHTML = '<option value="">— همه —</option>' + Object.entries(stepsCatalog).map(([k, v]) =>
-                                `<option value="${esc(k)}"${searchState.prog.step === k ? ' selected' : ''}>${esc(v)}</option>`).join('');
-                        if (searchState.prog.stepState === 'todo') {
-                                const r = progStepWrap.querySelector('input[name="prog-step-state"][value="todo"]');
-                                if (r) r.checked = true;
-                        }
-                }
-                if (progStatusSel) {
-                        progStatusSel.value = searchState.prog.status || '';
-                        const applyProg = () => {
-                                searchState.prog.status = progStatusSel.value;
-                                searchState.prog.step = progStepSel ? progStepSel.value : '';
-                                const todo = document.querySelector('input[name="prog-step-state"]:checked');
-                                searchState.prog.stepState = todo ? todo.value : 'done';
-                                searchState.page = 1; runSearch();
-                        };
-                        progStatusSel.addEventListener('change', applyProg);
-                        if (progStepSel) progStepSel.addEventListener('change', applyProg);
-                        progStepWrap.querySelectorAll('input[name="prog-step-state"]').forEach((r) => r.addEventListener('change', () => { if (progStepSel.value) applyProg(); }));
-                }
+                /* ۲.۰.۱ — فیلتر وضعیت/مرحله دایری حذف شد */
 
                 const runSearch = debounce(async () => {
                         spinner.classList.remove('hidden');
@@ -1831,13 +1516,6 @@ TPP.app = (function () {
 
                 document.getElementById('clear-filters').addEventListener('click', () => {
                         searchState.filters = {};
-                        searchState.prog = { status: '', step: '', stepState: 'done' }; // ۱.۱۲.۰ — فیلتر دایری هم پاک شود
-                        const ps = document.getElementById('prog-status');
-                        if (ps) ps.value = '';
-                        const pst = document.getElementById('prog-step');
-                        if (pst) pst.value = '';
-                        const done = document.querySelector('input[name="prog-step-state"][value="done"]');
-                        if (done) done.checked = true;
                         combos.forEach((c) => c.reset());
                         searchState.page = 1; runSearch();
                 });
@@ -1924,9 +1602,9 @@ TPP.app = (function () {
                         toast(ids.length + ' سرویس حذف شد.', 'success');
                         await doSearch();
                 });
-                /* ۱.۱۳.۰ — تغییر گروهی پیشرفت/وضعیت سرویس‌های انتخاب‌شده */
-                const bulkProgBtn = document.getElementById('btn-bulk-progress');
-                if (bulkProgBtn) bulkProgBtn.addEventListener('click', () => {
+                /* ۲.۰.۱ — تغییر گروهی فیلدهای سرویس‌های انتخاب‌شده (پیشرفت دایری حذف شد) */
+                const bulkFieldsBtn = document.getElementById('btn-bulk-fields');
+                if (bulkFieldsBtn) bulkFieldsBtn.addEventListener('click', () => {
                         const ids = Array.from(searchState.selected).filter((id) => typeof id === 'number');
                         if (!ids.length) return;
                         openBulkEdit(ids, false);
@@ -1935,19 +1613,13 @@ TPP.app = (function () {
                 // خروجی اکسل/PDF از نتایج جستجوی فعلی (نیازمند اتصال)
                 /* ۱.۲۱.۰ — رفع باگ «خروجی همیشه کل سرویس‌ها»: پارامترهای خروجی با یک تابع مشترک
                  * از searchState جمع می‌شود — دقیقاً همان فیلترهایی که doSearch می‌فرستد
-                 * (متن جستجو + فیلتر فیلدها + بازه ویرایش + وضعیت دایری + دسته/تگ). */
+                 * (متن جستجو + فیلتر فیلدها + بازه ویرایش + دسته/تگ — ۲.۰.۱: بدون دایری). */
                 const collectSearchParams = () => {
                         const params = {};
                         if (searchState.query) params.query = searchState.query;
                         if (Object.keys(searchState.filters || {}).length) params.filters = JSON.stringify(searchState.filters);
                         if (searchState.updFrom) params.upd_from = searchState.updFrom;
                         if (searchState.updTo) params.upd_to = searchState.updTo;
-                        /* ۱.۱۲.۰ — فیلتر وضعیت دایری هم در خروجی اعمال می‌شود */
-                        if (searchState.prog && searchState.prog.status) params.progress_status = searchState.prog.status;
-                        if (searchState.prog && searchState.prog.step) {
-                                params.progress_step = searchState.prog.step;
-                                params.progress_step_state = searchState.prog.stepState || 'done';
-                        }
                         /* ۱.۱۹.۰ — فیلتر دسته‌بندی/تگ (۱.۲۱.۰: در خروجی هم اعمال می‌شود) */
                         if (searchState.cat) params.category = searchState.cat;
                         if (searchState.tags && searchState.tags.length) params.tags = searchState.tags.join(',');
@@ -2012,13 +1684,7 @@ TPP.app = (function () {
                                 if (Object.keys(searchState.filters).length) params.filters = JSON.stringify(searchState.filters);
                                 if (searchState.updFrom) params.upd_from = searchState.updFrom;
                                 if (searchState.updTo) params.upd_to = searchState.updTo;
-                                /* ۱.۱۲.۰ — فیلتر وضعیت دایری */
-                                if (searchState.prog.status) params.progress_status = searchState.prog.status;
-                                if (searchState.prog.step) {
-                                        params.progress_step = searchState.prog.step;
-                                        params.progress_step_state = searchState.prog.stepState || 'done';
-                                }
-                                /* ۱.۱۹.۰ — فیلتر دسته‌بندی/تگ */
+                                /* ۱.۱۹.۰ — فیلتر دسته‌بندی/تگ (۲.۰.۱ — فیلتر دایری حذف شد) */
                                 if (searchState.cat) params.category = searchState.cat;
                                 if (searchState.tags.length) params.tags = searchState.tags.join(',');
                                 data = await TPP.api.request('GET', 'search', null, params, { signal: searchAbort.signal });
@@ -2037,7 +1703,7 @@ TPP.app = (function () {
 
         async function localSearchFallback() {
                 /* ۱.۳۰.۰ — فیلتر دسته/تگ در جستجوی آفلاین هم اعمال می‌شود (قبلاً نادیده گرفته می‌شد) */
-                const rows = await TPP.offline.searchLocal(searchState.query, searchState.filters, state.schema, searchState.sort, searchState.order, { from: searchState.updFrom, to: searchState.updTo, prog: searchState.prog, cat: searchState.cat, tags: searchState.tags });
+                const rows = await TPP.offline.searchLocal(searchState.query, searchState.filters, state.schema, searchState.sort, searchState.order, { from: searchState.updFrom, to: searchState.updTo, cat: searchState.cat, tags: searchState.tags });
                 // ۱.۹.۲: اگر صفحه فعلی خارج از محدوده نتایج محلی است (مثلاً بعد از قطع اینترنت)، به صفحه اول برگرد
                 if (searchState.page > 1 && (searchState.page - 1) * searchState.perPage >= rows.length) searchState.page = 1;
                 const start = (searchState.page - 1) * searchState.perPage;
@@ -2114,12 +1780,11 @@ TPP.app = (function () {
                                         <span class="val">${esc(shown)}</span>
                                 </div>`;
                         }).join('');
-                        return `<div class="svc-card${searchState.selected.has(r.id) ? ' selected' : ''}${r && r.progress && ((r.progress.failures && r.progress.failures.length) || r.progress.failure) ? ' has-failure' : ''}">
+                        return `<div class="svc-card${searchState.selected.has(r.id) ? ' selected' : ''}">
                                 <div class="svc-card-head">
                                         ${canSel ? `<input type="checkbox" class="svc-sel" data-sel="${esc(String(r.id))}" ${searchState.selected.has(r.id) ? 'checked' : ''} ${isTmp ? 'disabled title="در صف همگام‌سازی — پس از ثبت نهایی قابل انتخاب است"' : ''} title="انتخاب برای عملیات گروهی">` : ''}
                                         <span class="svc-id">#${esc(r.id)}</span>
                                         ${r._pending ? '<span class="chip warn">در صف همگام‌سازی</span>' : (r._dirty ? '<span class="chip warn">ذخیره محلی</span>' : '<span class="chip ok">ثبت‌شده</span>')}
-                                        ${progressBadgeHtml(r)}
                                         ${(r.category && r.category.label) ? '<span class="chip cat-chip" title="دسته‌بندی پروژه">🏷 ' + esc(r.category.label) + '</span>' : ''}
                                         ${(Array.isArray(r.tags) && r.tags.length) ? r.tags.map((t) => '<span class="chip tag-chip on">🏷 ' + esc(t.label) + '</span>').join('') : ''}
                                 </div>
@@ -2128,7 +1793,7 @@ TPP.app = (function () {
                                         <span class="svc-upd">🕒 ${fmtDate(r.updated_at)}</span>
                                         <span class="svc-actions">
                                                 <button class="btn btn-sm btn-primary" data-open="${esc(String(svcId))}" ${isTmp ? 'data-tmp="' + esc(r.id) + '"' : ''}>👁 مشاهده و ویرایش</button>
-                                                ${canQ && !isTmp ? `<button class="btn btn-sm btn-quick" data-quick="${esc(String(r.id))}" title="ویرایش سریع پیشرفت دایری و وضعیت همین سرویس">⚡</button>` : ''}
+                                                ${canQ && !isTmp ? `<button class="btn btn-sm btn-quick" data-quick="${esc(String(r.id))}" title="ویرایش سریع فیلدهای همین سرویس">⚡</button>` : ''}
                                                 ${canDelete && !isTmp ? `<button class="btn btn-sm btn-danger" data-del="${esc(String(r.id))}" title="حذف این سرویس">🗑</button>` : ''}
                                         </span>
                                 </div>

@@ -58,281 +58,16 @@ TPP.views = TPP.views || {};
                 f_sip_pass: 'در صورتی که مشترک شماره تلفن ندارد یا پسورد موجود نیست، عدد 0 تایپ شود',
         };
 
-        /* ==================== پیشرفت دایری سرویس (۱.۱۲.۰) ====================
-           ۱۶ مرحله دایری + ۴ وضعیت خرابی — کارت آن بالای «اطلاعات اصلی» می‌نشیند و
-           با تیک‌زدن مراحل نوار پیشرفت کامل می‌شود؛ قبل از ذخیره از کاربر پرسیده
-           می‌شود که این بخش را بررسی/تکمیل کند و تغییرات در تاریخچه/گزارش فعالیت ثبت می‌شود. */
-        const PROGRESS_STEPS_FALLBACK = {
-                infra: 'زیرساخت موجود است (پیوستگی دارد)',
-                fat: 'FAT و اسپلیترهای آورنده آن نصب شده',
-                drop: 'دراپ‌کشی انجام شده',
-                fusion_fat: 'فیوژن سمت FAT انجام شده',
-                atb: 'فیوژن و نصب ATB داخل واحد انجام شده',
-                patch: 'پچ‌کورد دارد یا داده می‌شود',
-                modem: 'مودم دارد یا داده می‌شود',
-                registered: 'ثبت‌نام شده است',
-                ready: 'سرویس آماده تحویل می‌باشد',
-                sip_info: 'اطلاعات مربوط به سیپ‌فون از مرکز دریافت شده یا در یارا موجود می‌باشد',
-                inet_config: 'تنظیمات اینترنت انجام شده است',
-                inet_omc: 'اینترنت جهت دایری به OMC ارسال شده است یا دکمه ZTP زده شده است',
-                inet_connected: 'اینترنت متصل می‌باشد',
-                sip_config: 'تنظیمات سیپ‌فون انجام شده است',
-                sip_omc: 'اطلاعات سیپ‌فون جهت دایری به OMC ارسال شده است یا دکمه ZTP زده شده است',
-                phone_connected: 'تلفن متصل می‌باشد'
-        };
-        const PROGRESS_FAILURES_FALLBACK = {
-                los: 'مشترک LOS می‌باشد (اینترنت و تلفن قطع می‌باشد)',
-                phone: 'تلفن مشترک قطع می‌باشد',
-                internet: 'اینترنت مشترک قطع می‌باشد',
-                other: 'سایر'
-        };
+        /* ==================== ۲.۰.۱ — کارت «پیشرفت دایری سرویس» از فرم حذف شد ====================
+           (توابع PROGRESS_STEPS_FALLBACK/progressCatalog/collectProgress/localProgressSummary/
+            progressCardHtml/bindProgress/progressNeedsReview/confirmProgress حذف شدند؛
+            فیلد «توضیحات» به بخش «سایر اطلاعات» برگشت.) */
 
-        /** کاتالوگ مراحل/خرابی‌ها — از bootstrap سرور؛ در نبود آن (نسخه قدیم سرور) مقادیر جاری */
-        function progressCatalog() {
-                const st = TPP.app.state();
-                const p = st && st.progress;
-                const steps = (p && p.steps && Object.keys(p.steps).length) ? p.steps : PROGRESS_STEPS_FALLBACK;
-                const failures = (p && p.failures && Object.keys(p.failures).length) ? p.failures : PROGRESS_FAILURES_FALLBACK;
-                return { steps, failures };
-        }
-
-        /** وضعیت فعلی پیشرفت از DOM (برای ذخیره/بررسی) — ۱.۱۳.۰: شامل مراحل ردشده؛ ۱.۱۴.۰: خرابی‌های چندتایی */
-        function collectProgress() {
-                const card = document.getElementById('prog-card');
-                const steps = [];
-                const skipped = [];
-                const failures = [];
-                if (card) {
-                        card.querySelectorAll('input[data-step]').forEach((el) => {
-                                if (el.checked) steps.push(el.dataset.step);
-                                else {
-                                        const lbl = el.closest('label.prog-step');
-                                        if (lbl && lbl.classList.contains('skipped')) skipped.push(el.dataset.step);
-                                }
-                        });
-                        // ۱.۱۴.۰ — خرابی‌ها مستقل از هم تیک می‌خورند (مثلاً «سایر» + «اینترنت قطع است» با هم)
-                        card.querySelectorAll('input[data-fail]').forEach((el) => { if (el.checked) failures.push(el.dataset.fail); });
-                }
-                return { steps, skipped, failures, failure: failures[0] || '' };
-        }
-
-        /** خلاصه پیشرفت برای ردیف محلی (کش IDB آفلاین) — معادل خروجی progress سرور — ۱.۱۴.۰: خرابی چندتایی */
-        function localProgressSummary(prog) {
-                const { steps, failures } = progressCatalog();
-                const keys = Object.keys(steps);
-                const valid = (prog.steps || []).filter((k) => keys.indexOf(k) !== -1);
-                const excluded = (prog.excluded || prog.skipped || []).filter((k) => keys.indexOf(k) !== -1);
-                const failKeys = (prog.failures && prog.failures.length) ? prog.failures : (prog.failure ? [prog.failure] : []);
-                const failLabels = failKeys.map((k) => failures[k] || k);
-                const done = valid.length;
-                const total = keys.length;
-                const last = done ? valid[done - 1] : '';
-                return {
-                        steps: valid,
-                        excluded,
-                        excluded_count: excluded.length,
-                        failures: failKeys,
-                        failures_labels: failLabels,
-                        failure: failKeys[0] || '',
-                        failure_label: failLabels[0] || '',
-                        done: done,
-                        total: total,
-                        pct: total ? Math.round(done * 100 / total) : 0,
-                        status: (done >= total && total > 0) ? 'done' : (done > 0 ? 'progress' : 'none'),
-                        last_step: last,
-                        last_label: last ? steps[last] : ''
-                };
-        }
-
-        /** HTML کارت پیشرفت دایری — بالای اطلاعات اصلی (canEdit=false → فقط-مشاهده) */
         /** ۱.۲۳.۰ — ردیف دکمه ذخیره در پایین هر بخش فرم سرویس (از ۱.۲۴.۰ قطعی — تأیید کاربر).
          *  دکمه type="submit" داخل فرم است → همان جریان ذخیره کامل (saveService + اعتبارسنجی) اجرا می‌شود؛
          *  هدف: کاربر برای ذخیره مجبور به اسکرول تا انتهای صفحه نباشد. بازگشت: حذف فراخوانی‌های secSaveHtml. */
         function secSaveHtml() {
                 return '<div class="sec-save-row"><button type="submit" class="btn btn-primary btn-sm" title="ذخیره کل فرم سرویس (همان دکمه ذخیره پایین صفحه)">💾 ذخیره اطلاعات</button><span class="muted">ذخیره کل فرم — بدون نیاز به اسکرول تا انتهای صفحه</span></div>';
-        }
-
-        function progressCardHtml(row, canEdit, descField) {
-                const { steps, failures } = progressCatalog();
-                const p = (row && row.progress) || {};
-                const checked = new Set(p.steps || []);
-                const skippedSet = new Set(p.excluded || p.skipped || []); // ۱.۱۳.۰ — مراحل ردشده توسط کاربر
-                const total = Object.keys(steps).length;
-                // ۱.۱۴.۰ — خرابی‌ها آرایه‌اند؛ برای سازگاری با داده قدیمی failure تکی هم پشتیبانی می‌شود
-                const failSet = new Set((p.failures && p.failures.length) ? p.failures : (p.failure ? [p.failure] : []));
-                const dis = canEdit ? '' : ' disabled';
-                const stepHtml = Object.entries(steps).map(([key, label]) => `
-                        <label class="prog-step${checked.has(key) ? ' done' : ''}${skippedSet.has(key) ? ' skipped' : ''}" title="${skippedSet.has(key) ? 'ردشده توسط کاربر — آبشار از این مرحله می‌پرد (تیک دوباره = رفع ردشدگی)' : ''}">
-                                <input type="checkbox" id="prog-step-${esc(key)}" data-step="${esc(key)}"${checked.has(key) ? ' checked' : ''}${dis}>
-                                <span class="prog-step-box"></span>
-                                <span class="prog-step-label">${esc(label)}</span>
-                        </label>`).join('');
-                const failHtml = Object.entries(failures).map(([key, label]) => `
-                        <label class="prog-fail-opt${failSet.has(key) ? ' on' : ''}${key === 'other' ? ' other' : ''}" title="۱.۱۴.۰ — چند خرابی را می‌توان همزمان انتخاب کرد">
-                                <input type="checkbox" id="prog-fail-${esc(key)}" data-fail="${esc(key)}"${failSet.has(key) ? ' checked' : ''}${dis}>
-                                <span class="prog-step-box"></span>
-                                <span class="prog-step-label">${esc(label)}</span>
-                        </label>`).join('');
-                // «توضیحات» (درخواست کاربر) به بخش خرابی «سایر» منتقل شد
-                const descHtml = descField ? `
-                        <div class="prog-desc${failSet.has('other') ? ' show' : ''}" id="prog-desc-wrap">
-                                ${fieldHtml(descField, row ? row.f_description : '', 'svc-', !canEdit)}
-                        </div>` : '';
-                return `
-                <div class="card prog-card" id="prog-card">
-                        <h3>🚀 پیشرفت دایری سرویس</h3>
-                        <div class="prog-summary">
-                                <div class="prog-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="prog-bar">
-                                        <div class="prog-fill" id="prog-fill"></div>
-                                </div>
-                                <div class="prog-meta">
-                                        <span class="prog-count" id="prog-count"></span>
-                                        <span class="chip" id="prog-chip"></span>
-                                </div>
-                        </div>
-                        <div class="prog-steps" id="prog-steps">${stepHtml}</div>
-                        <div class="prog-fail">
-                                <div class="prog-fail-head">⚠️ مشترک اعلام خرابی نموده است <span class="muted">— با انتخاب، سرویس در فهرست سرویس‌ها به رنگ قرمز نمایش داده می‌شود؛ ۱.۱۴.۰: می‌توان چند خرابی را همزمان علامت زد</span></div>
-                                <div class="prog-fail-opts">${failHtml}</div>
-                                ${descHtml}
-                                <div class="hint">«سایر» انتخاب شود، شرح خرابی در همین بخش «توضیحات» نوشته می‌شود.</div>
-                        </div>
-                        ${canEdit ? secSaveHtml() : ''}
-                </div>`;
-        }
-
-        /** اتصال رفتار کارت پیشرفت — خروجی تابع refresh (برای پس از اعمال پیش‌نویس) */
-        function bindProgress() {
-                const card = document.getElementById('prog-card');
-                if (!card) return null;
-                const { steps } = progressCatalog();
-                const total = Object.keys(steps).length;
-                const fill = () => document.getElementById('prog-fill');
-                const count = () => document.getElementById('prog-count');
-                const chip = () => document.getElementById('prog-chip');
-                const refresh = () => {
-                        const prog = collectProgress();
-                        const done = prog.steps.length;
-                        const pct = total ? Math.round(done * 100 / total) : 0;
-                        const f = fill();
-                        if (f) { f.style.width = pct + '%'; }
-                        const bar = document.getElementById('prog-bar');
-                        if (bar) bar.setAttribute('aria-valuenow', String(pct));
-                        const c = count();
-                        if (c) {
-                                let txt = done.toLocaleString('fa-IR') + ' از ' + total.toLocaleString('fa-IR') + ' مرحله (' + pct.toLocaleString('fa-IR') + '٪)';
-                                if (prog.skipped.length) txt += ' — ' + prog.skipped.length.toLocaleString('fa-IR') + ' مرحله ردشده';
-                                c.textContent = txt;
-                        }
-                        const ch = chip();
-                        if (ch) {
-                                let cls = 'chip', txt = '⏳ دایری شروع نشده';
-                                const failCount = prog.failures.length;
-                                if (failCount) { cls = 'chip err'; txt = failCount > 1 ? ('❌ خرابی اعلام‌شده (' + failCount.toLocaleString('fa-IR') + ' مورد)') : '❌ خرابی اعلام‌شده'; }
-                                else if (done >= total && total > 0) { cls = 'chip ok'; txt = '✅ دایری کامل'; }
-                                else if (done > 0) { cls = 'chip warn'; txt = '🚧 در حال دایری'; }
-                                ch.className = cls;
-                                ch.textContent = txt;
-                        }
-                        // کلاس done روی هر مرحله + حالت قرمز کارت + نمایش توضیحات «سایر»
-                        card.querySelectorAll('label.prog-step').forEach((l) => {
-                                const inp = l.querySelector('input[data-step]');
-                                l.classList.toggle('done', !!(inp && inp.checked));
-                        });
-                        card.classList.toggle('has-failure', !!prog.failures.length);
-                        card.querySelectorAll('label.prog-fail-opt').forEach((l) => {
-                                const inp = l.querySelector('input[data-fail]');
-                                l.classList.toggle('on', !!(inp && inp.checked));
-                        });
-                        const dw = document.getElementById('prog-desc-wrap');
-                        if (dw) dw.classList.toggle('show', prog.failures.indexOf('other') !== -1);
-                };
-                // ۱.۱۳.۰ — منطق آبشاری مراحل وابسته (معادل TPP_Progress::apply سرور):
-                // تیک مرحله N → مراحل قبل خودکار تیک می‌خورند (به‌جز «ردشده‌ها» — پرش آبشار)؛
-                // تیک مستقیم مرحله ردشده = رفع ردشدگی؛ برداشتن تیک با وجود مرحله بعدی تیک‌دار = «ردشده»؛
-                // برداشتن تیک آخرین مرحله = عقب‌گرد طبیعی (بدون ردشدگی).
-                let cascading = false;
-                const stepInput = (k) => card.querySelector('input[data-step="' + k + '"]');
-                const markSkipped = (k, on) => {
-                        const inp = stepInput(k);
-                        const lbl = inp ? inp.closest('label.prog-step') : null;
-                        if (lbl) lbl.classList.toggle('skipped', !!on);
-                };
-                const onStepChange = (el) => {
-                        if (cascading) return; // تغییر آبشاری برنامه‌ای — ردشدگی دست‌نخورده می‌ماند
-                        const keys = Object.keys(steps);
-                        const idx = keys.indexOf(el.dataset.step);
-                        if (idx < 0) { refresh(); return; }
-                        if (el.checked) {
-                                markSkipped(el.dataset.step, false); // تیک دوباره = رفع ردشدگی
-                                cascading = true;
-                                for (let i = 0; i < idx; i++) {
-                                        const k = keys[i];
-                                        const prev = stepInput(k);
-                                        if (prev && !prev.checked && !prev.closest('label.prog-step').classList.contains('skipped')) {
-                                                prev.checked = true; // آبشار — مراحل قبلی غیرردشده
-                                        }
-                                }
-                                cascading = false;
-                        } else {
-                                const later = keys.slice(idx + 1).some((k) => { const c = stepInput(k); return c && c.checked; });
-                                markSkipped(el.dataset.step, !!later);
-                        }
-                        refresh();
-                };
-                card.querySelectorAll('input[data-step]').forEach((el) => el.addEventListener('change', () => onStepChange(el)));
-                // ۱.۱۴.۰ — خرابی‌ها مستقل از هم انتخاب می‌شوند (چند خرابی همزمان، مثلاً «سایر» + «اینترنت قطع است»);
-                // برداشتن تیک هر گزینه فقط همان را رفع می‌کند
-                card.querySelectorAll('input[data-fail]').forEach((el) => el.addEventListener('change', () => {
-                        if (el.checked && el.dataset.fail === 'other') {
-                                const t = document.getElementById('svc-f_description');
-                                if (t) { try { t.focus({ preventScroll: true }); } catch (e) {} }
-                        }
-                        refresh();
-                }));
-                refresh();
-                return refresh;
-        }
-
-        /** آیا پیش از ذخیره باید از کاربر درباره پیشرفت دایری پرسید؟ */
-        function progressNeedsReview(prog) {
-                const { steps } = progressCatalog();
-                const total = Object.keys(steps).length;
-                // ۱.۱۴.۰ — خرابی‌های چندتایی هم بررسی می‌شوند
-                const failKeys = (prog.failures && prog.failures.length) ? prog.failures : (prog.failure ? [prog.failure] : []);
-                if (prog.steps.length >= total && !failKeys.length) return false; // کامل و بدون خرابی
-                if (failKeys.indexOf('other') !== -1) {
-                        const d = document.getElementById('svc-f_description');
-                        if (!d || !String(d.value || '').trim()) return true; // سایر بدون شرح
-                }
-                return true; // ناقص یا خرابی اعلام‌شده → بررسی شود
-        }
-
-        /** پرسش قبل از ذخیره — ۱.۱۴.۰: دکمه‌ها به درخواست کاربر «✍️ تکمیل فرم» (بازگشت به کارت) و
-           «✅ تکمیل کرده‌ام، ذخیره کن» (ادامه ذخیره) تغییر کردند. */
-        function confirmProgress(prog) {
-                return new Promise((resolve) => {
-                        const { steps } = progressCatalog();
-                        const total = Object.keys(steps).length;
-                        const done = prog.steps.length;
-                        const { failures } = progressCatalog();
-                        // ۱.۱۴.۰ — خرابی‌ها می‌توانند چندتایی باشند
-                        const failKeys = (prog.failures && prog.failures.length) ? prog.failures : (prog.failure ? [prog.failure] : []);
-                        const failTxt = failKeys.length ? (' — خرابی: ' + failKeys.map((k) => (failures[k] || k)).join('، ')) : '';
-                        const m = modal(
-                                '<div class="modal-head"><h3>🚀 بررسی پیشرفت دایری سرویس</h3><button class="modal-close" data-close>×</button></div>' +
-                                '<div class="modal-body"><p style="line-height:2">پیش از ذخیره، بخش «پیشرفت دایری سرویس» را بررسی و تکمیل کنید.<br>' +
-                                '<b>' + done.toLocaleString('fa-IR') + ' از ' + total.toLocaleString('fa-IR') + ' مرحله</b> تکمیل شده است' + esc(failTxt) + '.</p>' +
-                                '<p class="muted">وضعیت دایری در فهرست سرویس‌ها (سبز/قرمز)، فیلترها و گزارش فعالیت‌ها نمایش داده می‌شود.</p></div>' +
-                                '<div class="modal-foot"><button class="btn btn-primary" id="prog-review-btn">✍️ تکمیل فرم</button>' +
-                                '<button class="btn" id="prog-save-anyway">✅ تکمیل کرده‌ام، ذخیره کن</button></div>',
-                                { static: true }
-                        );
-                        m.el.querySelector('#prog-review-btn').addEventListener('click', () => { m.close(); resolve(false); });
-                        m.el.querySelector('#prog-save-anyway').addEventListener('click', () => { m.close(); resolve(true); });
-                        const x = m.el.querySelector('[data-close]');
-                        if (x) x.addEventListener('click', () => { m.close(); resolve(false); });
-                });
         }
 
         /* ==================== پیش‌نویس خودکار (۱.۱۰.۰) ====================
@@ -578,9 +313,8 @@ TPP.views = TPP.views || {};
                         const f = svcFields.find((x) => x.slug === slug);
                         if (f) mainFields.push(f);
                 });
-                // ۱.۱۲.۰ — «توضیحات» به بخش خرابی «سایر» کارت پیشرفت دایری منتقل شد
-                const descField = svcFields.find((f) => f.slug === 'f_description') || null;
-                const otherFields = svcFields.filter((f) => MAIN_ORDER.indexOf(f.slug) === -1 && f.slug !== 'f_description');
+                // ۲.۰.۱ — «توضیحات» به بخش «سایر اطلاعات» برگشت (کارت دایری حذف شد)
+                const otherFields = svcFields.filter((f) => MAIN_ORDER.indexOf(f.slug) === -1);
 
                 const editing = !!row;
                 const address = row && row.address ? row.address : (addrId ? { id: parseInt(addrId, 10) } : null);
@@ -660,7 +394,6 @@ TPP.views = TPP.views || {};
 
                 <form id="service-form" autocomplete="off">
                         <input type="hidden" id="selected-address-id" value="${addressLocked ? address.id : ''}" ${addressLocked ? 'data-fixed="1"' : ''}>
-                        ${progressCardHtml(row, can(editing ? 'tpp_edit_services' : 'tpp_create_services'), descField)}
                         ${catCard}
                         ${mainFields.length ? `<div class="card">
                                 <h3>⭐ اطلاعات اصلی</h3>
@@ -721,12 +454,9 @@ TPP.views = TPP.views || {};
                 bindPassToggles();
                 // ۱.۲۱.۰ — کامبوباکس آجاکسی دسته‌بندی/تگ + پیش‌فرض دسته بازبینی
                 bindCatTagCombos(cats, defaultCatId, defaultCatLabel);
-                // ۱.۱۲.۰ — کارت پیشرفت دایری (نوار + تیک مراحل + خرابی‌ها)
-                const progRefresh = bindProgress();
+                // ۲.۰.۱ — کارت پیشرفت دایری حذف شد (bindProgress حذف شد)
                 // ۱.۱۰.۰ — پیش‌نویس خودکار: بازیابی/ذخیره همزمان با تایپ در حافظه دستگاه
                 Drafts.bind(editing ? ('svc_' + String(row ? row.id : params.id).replace(/[^a-zA-Z0-9_]/g, '')) : 'new', editing, row);
-                // پس از بازیابی پیش‌نویس (چک‌باکس‌ها بدون رویداد change اعمال می‌شوند) نوار پیشرفت تازه شود
-                if (progRefresh) progRefresh();
                 document.getElementById('cancel-btn').addEventListener('click', () => history.back());
 
                 const form = document.getElementById('service-form');
@@ -1445,22 +1175,7 @@ TPP.views = TPP.views || {};
                 // اعتبارسنجی قبل از ذخیره — در صورت خطا کاربر در همین صفحه می‌ماند و مقادیر حفظ می‌شود
                 if (!validateForm(schema)) return;
 
-                // ۱.۱۲.۰ — پیش از ذخیره، بررسی/تکمیل «پیشرفت دایری سرویس» از کاربر پرسیده می‌شود
-                const progressData = collectProgress();
-                if (progressNeedsReview(progressData)) {
-                        const proceed = await confirmProgress(progressData);
-                        if (!proceed) {
-                                const card = document.getElementById('prog-card');
-                                if (card) {
-                                        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                        card.classList.add('prog-flash');
-                                        setTimeout(() => card.classList.remove('prog-flash'), 2000);
-                                        const first = card.querySelector('input[data-step]:not(:checked)');
-                                        if (first) { try { first.focus({ preventScroll: true }); } catch (e) {} }
-                                }
-                                return;
-                        }
-                }
+                // ۲.۰.۱ — پرسش «بررسی پیشرفت دایری» پیش از ذخیره حذف شد
 
                 const btn = document.getElementById('save-btn');
                 btn.disabled = true; btn.textContent = 'در حال ذخیره…';
@@ -1473,7 +1188,6 @@ TPP.views = TPP.views || {};
                                         address_id: addressId || null,
                                         address: addressId ? null : addressData,
                                         service: serviceData,
-                                        progress: progressData,
                                         category: catId || null, // ۱.۱۹.۰ — دسته‌بندی
                                         tags: tagIds // ۱.۱۹.۰ — تگ‌ها
                                 });
@@ -1495,7 +1209,6 @@ TPP.views = TPP.views || {};
                                         address_id: addressId || null,
                                         service: serviceData,
                                         address: addressData,
-                                        progress: progressData,
                                         category: catId || null, // ۱.۱۹.۰ — دسته‌بندی
                                         tags: tagIds // ۱.۱۹.۰ — تگ‌ها
                                 };
@@ -1507,7 +1220,6 @@ TPP.views = TPP.views || {};
                                                 payload.id = null;
                                                 prev.payload.service = { ...prev.payload.service, ...serviceData };
                                                 prev.payload.address = { ...(prev.payload.address || {}), ...addressData };
-                                                prev.payload.progress = progressData; // ۱.۱۲.۰ — پیشرفت دایری هم در عملیات صف به‌روز می‌شود
                                                 prev.payload.category = catId || null; // ۱.۱۹.۰
                                                 prev.payload.tags = tagIds; // ۱.۱۹.۰
                                                 await TPP_IDB.set('outbox', prev.op_id, prev);
@@ -1516,7 +1228,6 @@ TPP.views = TPP.views || {};
                                                 if (localRow) {
                                                         Object.assign(localRow, serviceData);
                                                         localRow.address = { ...(localRow.address || {}), ...addressData };
-                                                        localRow.progress = localProgressSummary(progressData); // ۱.۱۲.۰
                                                         await TPP_IDB.set('services', localRow.id, localRow);
                                                 }
                                                 toast('✅ تغییرات ذخیره شد (به عملیات در صف اضافه شد).', 'success', 6000);

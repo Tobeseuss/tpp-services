@@ -114,7 +114,7 @@ class TPP_Rest {
                                 'mobile_field'  => TPP_SMS::mobile_field_slug(),
                                 'copy_template' => tpp()->sms()->copy_template(),
                         ),
-                        'progress' => TPP_Progress::catalog(), // ۱.۱۲.۰ — مراحل دایری + خرابی‌ها برای اپ
+                        // ۲.۰.۱ — کاتالوگ پیشرفت دایری از bootstrap حذف شد
                         'stats'    => tpp()->services()->stats(),
                         'last_sync'=> tpp()->sync()->last_sync( $user_id ),
                         'site'     => get_bloginfo( 'name' ),
@@ -150,16 +150,13 @@ class TPP_Rest {
                                 /* بازه زمانی ویرایش — YYYY-MM-DD میلادی (الگوریتم شمسی→میلادی در اپ انجام می‌شود؛ مقایسه به وقت تهران) */
                                 'upd_from' => array( 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ),
                                 'upd_to'   => array( 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ),
-                                /* ۱.۱۲.۰ — فیلتر وضعیت پیشرفت دایری: none|progress|done|fail|fail_los|fail_phone|fail_internet|fail_other */
-                                'progress_status'     => array( 'type' => 'string', 'sanitize_callback' => 'sanitize_key' ),
-                                'progress_step'       => array( 'type' => 'string', 'sanitize_callback' => 'sanitize_key' ),
-                                'progress_step_state' => array( 'type' => 'string', 'sanitize_callback' => 'sanitize_key', 'default' => 'done' ),
+                                /* ۲.۰.۱ — فیلترهای وضعیت دایری حذف شدند */
                                 /* ۱.۱۹.۰ — فیلتر دسته‌بندی/تگ‌ها */
                                 'category' => array( 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ),
                                 'tags'     => array( 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ),
                         ) ) ),
                         'services'                 => array( 'POST' => array( 'perm' => 'perm_create', 'cb' => 'create_service' ) ),
-                        /* ۱.۱۳.۰ — تغییر گروهی/تکی پیشرفت دایری + خرابی + فیلدهای سرویس روی چند سرویس */
+                        /* ۱.۱۳.۰ → ۲.۰.۱ — تغییر گروهی فیلدهای سرویس روی چند سرویس (پیشرفت دایری حذف شد) */
                         'services/bulk'            => array( 'POST' => array( 'perm' => 'perm_quick', 'cb' => 'bulk_services' ) ),
                         'services/(?P<id>\d+)'     => array(
                                 'GET'    => array( 'perm' => 'perm_cap_view', 'cb' => 'get_service' ),
@@ -270,9 +267,13 @@ class TPP_Rest {
                                 'DELETE' => array( 'perm' => 'perm_categories', 'cb' => 'categories_delete' ),
                         ),
 
-                        /* --- 1.20.0 — بازبینی: صف سرویس‌های ارجاعی + سجل اقدامات نصاب‌ها --- */
+                        /* --- ۱.۲۰.۰ — بازبینی: صف سرویس‌های ارجاعی + سجل اقدامات نصاب‌ها --- */
                         'review/queue'             => array( 'GET' => array( 'perm' => 'perm_review_queue', 'cb' => 'review_queue' ) ),
                         'review/assign'            => array( 'POST' => array( 'perm' => 'perm_review_queue', 'cb' => 'review_assign' ) ),
+                        /* ۲.۰.۱ — پیشنهاد هوشمند دسته‌بندی (تطبیق کلمات آدرس/بلوک/خیابان با دسته‌ها) */
+                        'review/suggest'           => array( 'GET' => array( 'perm' => 'perm_review_queue', 'cb' => 'review_suggest', 'args' => array(
+                                'service_id' => array( 'type' => 'integer', 'required' => true ),
+                        ) ) ),
                         'review/changes'           => array( 'GET' => array( 'perm' => 'perm_review_installer', 'cb' => 'review_changes', 'args' => array(
                                 'date'    => array( 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ),
                                 'from'    => array( 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ),
@@ -724,9 +725,7 @@ class TPP_Rest {
                         'order'    => strtoupper( (string) $request->get_param( 'order' ) ),
                         'upd_from' => (string) $request->get_param( 'upd_from' ),
                         'upd_to'   => (string) $request->get_param( 'upd_to' ),
-                        'progress_status'     => sanitize_key( (string) $request->get_param( 'progress_status' ) ),
-                        'progress_step'       => sanitize_key( (string) $request->get_param( 'progress_step' ) ),
-                        'progress_step_state' => sanitize_key( (string) $request->get_param( 'progress_step_state' ) ),
+                        /* ۲.۰.۱ — فیلترهای وضعیت دایری حذف شدند */
                         /* ۱.۱۹.۰ — فیلتر دسته‌بندی/تگ‌ها */
                         'category' => (string) $request->get_param( 'category' ),
                         'tags'     => (string) $request->get_param( 'tags' ),
@@ -1027,6 +1026,19 @@ class TPP_Rest {
                 return self::ok( array( 'status' => 'assigned', 'id' => $service_id, 'result' => $result ) );
         }
 
+        /** GET review/suggest?service_id= — ۲.۰.۱: پیشنهاد هوشمند دسته‌بندی بر اساس تطبیق کلمات آدرس/بلوک/خیابان */
+        public function review_suggest( WP_REST_Request $request ) {
+                $service_id = (int) $request->get_param( 'service_id' );
+                if ( $service_id <= 0 ) {
+                        return self::err( 'tpp_bad_service', 'شناسه سرویس الزامی است.', 400 );
+                }
+                $result = TPP_Review::suggest_categories( $service_id );
+                if ( is_wp_error( $result ) ) {
+                        return self::err( $result->get_error_code(), $result->get_error_message(), 404 );
+                }
+                return self::ok( $result );
+        }
+
         /** GET review/changes ?date|from&to[&user_id][&status] — سجل اقدامات نصاب‌ها بر حسب روز */
         public function review_changes( WP_REST_Request $request ) {
                 return self::ok( TPP_Review::changes( array(
@@ -1197,10 +1209,9 @@ class TPP_Rest {
         }
 
         /**
-         * ۱.۱۳.۰ — تغییر گروهی/تکی پیشرفت دایری + وضعیت خرابی + فیلدهای سرویس.
-         * بدنه: {ids: [1,2,…], progress: {mode, step|steps, skipped_policy, failures|failure}, service: {slug: val}, dry_run}
-         * mode: '' (بدون تغییر) | up_to (تنظیم تا مرحله — آبشاری) | add | remove | clear
-         * ۱.۱۴.۰ — progress.failures آرایه خرابی‌ها (چند خرابی همزمان؛ آرایه خالی = رفع همه)
+         * ۱.۱۳.۰ → ۲.۰.۱ — تغییر گروهی/تکی فیلدهای سرویس.
+         * بدنه: {ids: [1,2,…], service: {slug: val}, dry_run}
+         * (کلیدهای progress/mode/step/failures قدیمی نادیده گرفته می‌شوند — دایری حذف شد)
          */
         public function bulk_services( WP_REST_Request $request ) {
                 $body = (array) $request->get_json_params();
@@ -1217,16 +1228,13 @@ class TPP_Rest {
                         return self::err( 'tpp_no_ids', 'فهرست شناسه سرویس‌ها (ids) خالی است.', 400 );
                 }
                 $opts = array();
-                foreach ( array( 'mode', 'step', 'steps', 'skipped_policy', 'failure', 'failures', 'service', 'dry_run' ) as $k ) {
+                foreach ( array( 'service', 'dry_run' ) as $k ) {
                         if ( array_key_exists( $k, $body ) ) {
                                 $opts[ $k ] = $body[ $k ];
                         }
                 }
-                if ( isset( $body['progress'] ) && is_array( $body['progress'] ) ) {
-                        $opts = array_merge( $opts, $body['progress'] );
-                }
-                if ( empty( $opts ) ) {
-                        return self::err( 'tpp_no_ops', 'هیچ عملیاتی مشخص نشده است (progress یا service).', 400 );
+                if ( empty( $opts ) || empty( $opts['service'] ) ) {
+                        return self::err( 'tpp_no_ops', 'هیچ فیلدی برای تغییر مشخص نشده است (service).', 400 );
                 }
                 $result = tpp()->services()->apply_bulk( $ids, $opts, array(
                         'user_id' => get_current_user_id(),
@@ -1566,10 +1574,7 @@ class TPP_Rest {
                         'filters'  => is_array( $filters ) ? $filters : array(),
                         'upd_from' => (string) $request->get_param( 'upd_from' ),
                         'upd_to'   => (string) $request->get_param( 'upd_to' ),
-                        // ۱.۱۲.۰ — فیلتر وضعیت دایری در خروجی‌ها هم اعمال می‌شود
-                        'progress_status'     => sanitize_key( (string) $request->get_param( 'progress_status' ) ),
-                        'progress_step'       => sanitize_key( (string) $request->get_param( 'progress_step' ) ),
-                        'progress_step_state' => sanitize_key( (string) $request->get_param( 'progress_step_state' ) ),
+                        // ۲.۰.۱ — فیلترهای وضعیت دایری حذف شدند
                         // ۱.۲۱.۰ رفع باگ «خروجی همیشه کل سرویس‌ها»: فیلتر دسته/تگ هم مثل صفحه جستجو اعمال شود
                         'category' => (string) $request->get_param( 'category' ),
                         'tags'     => (string) $request->get_param( 'tags' ),
@@ -2330,46 +2335,31 @@ class TPP_Rest {
                         ) ),
 
                         array( 'title' => 'سرویس‌ها و آدرس‌ها', 'items' => array(
-                                $ep( 'GET', 'search', 'جستجوی سراسری', 'جستجو در همه فیلدهای قابل جستجو (سرویس+آدرس) با فیلترهای فیلد، صفحه‌بندی، مرتب‌سازی، بازه زمانی ویرایش و فیلتر وضعیت پیشرفت دایری. فقط فیلدهای مجاز کاربر برگردانده می‌شود و عبارت/فیلتر در گزارش فعالیت ثبت می‌شود.', 'مشاهده سرویس‌ها', array(
+                                $ep( 'GET', 'search', 'جستجوی سراسری', 'جستجو در همه فیلدهای قابل جستجو (سرویس+آدرس) با فیلترهای فیلد، صفحه‌بندی، مرتب‌سازی و بازه زمانی ویرایش. فقط فیلدهای مجاز کاربر برگردانده می‌شود و عبارت/فیلتر در گزارش فعالیت ثبت می‌شود. (۲.۰.۱ — فیلترهای پیشرفت دایری حذف شدند.)', 'مشاهده سرویس‌ها', array(
                                         $arg( 'query', 'string', 'عبارت جستجو (LIKE همه فیلدهای قابل جستجو)' ),
                                         $arg( 'filters', 'json', 'شیء فیلتر فیلد‌ها {f_center_name: "مرکز الف"}' ),
                                         $arg( 'page / per_page', 'int', 'صفحه‌بندی (پیش‌فرض ۲۵)' ),
                                         $arg( 'sort / order', 'string', 'updated|created|phone — ASC|DESC' ),
                                         $arg( 'group', 'int', 'گروه‌بندی بر اساس آدرس (۱/۰)' ),
                                         $arg( 'upd_from / upd_to', 'date', 'بازه زمانی ویرایش YYYY-MM-DD' ),
-                                        $arg( 'progress_status', 'string', 'وضعیت دایری: none|progress|done|fail|fail_los|fail_phone|fail_internet|fail_other' ),
-                                        $arg( 'progress_step', 'string', 'کلید مرحله خاص مثل fat یا inet_omc' ),
-                                        $arg( 'progress_step_state', 'string', 'done = انجام‌شده / todo = انجام‌نشده (پیش‌فرض done)' ),
                                         $arg( 'category', 'int', '۱.۱۹.۰ — شناسه دسته‌بندی پروژه (فیلتر دقیق)' ),
                                         $arg( 'tags', 'string', '۱.۱۹.۰ — شناسه تگ‌ها با کاما — سرویسی که هرکدام را دارد' ),
                                 ) ),
-                                $ep( 'POST', 'services', 'ثبت سرویس', 'ایجاد سرویس + تطبیق/ایجاد آدرس با کلید نرمال‌شده؛ op_id برای تکرارناپذیری؛ progress = مراحل دایری و خرابی (۱.۱۲.۰).', 'ثبت سرویس', array(), array( 'address' => array( 'f_postal_code' => '1111111111' ), 'service' => array( 'f_phone' => '9100000000' ), 'progress' => array( 'steps' => array( 'infra', 'fat' ), 'failure' => '' ), 'op_id' => 'uniq-1' ) ),
-                                $ep( 'GET', 'services/{id}', 'مشخصات سرویس', 'کلید فیلد + progress (خلاصه مراحل دایری/خرابی) + تاریخچه + سرویس‌های همان آدرس + بازدیدهای اخیر؛ بازدید در گزارش فعالیت ثبت می‌شود.', 'مشاهده سرویس‌ها' ),
-                                $ep( 'PUT', 'services/{id}', 'ویرایش سرویس', 'ویرایش با base_version برای تشخیص تعارض همزمانی؛ op_id اختیاری؛ progress = مراحل دایری و خرابی (۱.۱۲.۰) — تغییرات در تاریخچه/گزارش فعالیت ثبت می‌شود.', 'ویرایش سرویس', array(), array( 'service' => array( 'f_owner_name' => 'نام جدید' ), 'progress' => array( 'steps' => array( 'infra', 'fat', 'drop' ), 'failure' => 'los' ), 'base_version' => 3 ) ),
+                                $ep( 'POST', 'services', 'ثبت سرویس', 'ایجاد سرویس + تطبیق/ایجاد آدرس با کلید نرمال‌شده؛ op_id برای تکرارناپذیری. (۲.۰.۱ — کلید progress دیگر پذیرفته نمی‌شود.)', 'ثبت سرویس', array(), array( 'address' => array( 'f_postal_code' => '1111111111' ), 'service' => array( 'f_phone' => '9100000000' ), 'op_id' => 'uniq-1' ) ),
+                                $ep( 'GET', 'services/{id}', 'مشخصات سرویس', 'کلید فیلد + دسته‌بندی/تگ‌ها + تاریخچه + سرویس‌های همان آدرس + بازدیدهای اخیر؛ بازدید در گزارش فعالیت ثبت می‌شود.', 'مشاهده سرویس‌ها' ),
+                                $ep( 'PUT', 'services/{id}', 'ویرایش سرویس', 'ویرایش با base_version برای تشخیص تعارض همزمانی؛ op_id اختیاری — تغییرات در تاریخچه/گزارش فعالیت ثبت می‌شود. (۲.۰.۱ — کلید progress دیگر پذیرفته نمی‌شود.)', 'ویرایش سرویس', array(), array( 'service' => array( 'f_owner_name' => 'نام جدید' ), 'base_version' => 3 ) ),
                                 $ep( 'DELETE', 'services/{id}', 'حذف سرویس', 'حذف + تاریخچه آبشاری؛ op_id اختیاری.', 'حذف سرویس', array(), array( 'op_id' => 'uniq-2' ) ),
                                 $ep( 'GET', 'addresses/{id}', 'آدرس و سرویس‌هایش', 'اطلاعات آدرس + همه سرویس‌های آن + تایم‌لاین.', 'مشاهده سرویس‌ها' ),
                                 $ep( 'GET', 'addresses/suggest', 'پیشنهاد آدرس', '?query= برای autocomplete آدرس در فرم ثبت.', 'مشاهده سرویس‌ها', array( $arg( 'query', 'string', 'حداقل ۲ نویسه' ) ) ),
                                 $ep( 'GET', 'values', 'مقادیر یکتای فیلد', 'مقادیر متمایز یک فیلد برای کشویی‌های فیلتر (با جستجوی q).', 'مشاهده سرویس‌ها', array( $arg( 'field', 'string', 'slug فیلد مثل f_center_name' ), $arg( 'q', 'string', 'فیلتر LIKE' ), $arg( 'limit', 'int', 'پیش‌فرض ۱۰۰' ) ) ),
                         ) ),
 
-                        array( 'title' => 'پیشرفت دایری سرویس (۱.۱۲.۰)', 'items' => array(
-                                $ep( 'POST/PUT', 'services + progress', 'ثبت/ویرایش پیشرفت دایری', 'در بدنه ثبت (POST services) و ویرایش (PUT services/{id}) کلید progress ارسال می‌شود؛ ۱۶ کلید مرحله: infra, fat, drop, fusion_fat, atb, patch, modem, registered, ready, sip_info, inet_config, inet_omc, inet_connected, sip_config, sip_omc, phone_connected. خرابی: los (اینترنت+تلفن قطع) / phone (قطع تلفن) / internet (قطع اینترنت) / other (سایر — شرح در فیلد توضیحات). ۱.۱۳.۰ — منطق آبشاری: مراحل وابسته‌اند؛ تیک مرحله N همه مراحل قبل از N را خودکار تیک می‌زند «مگر مراحل ردشده» که بعد از تیک‌خوردن، تیکشان توسط کاربر برداشته شده (progress.skipped یا برداشتن تیک با وجود مرحله بعدی تیک‌دار → progress_excluded). ۱.۱۴.۰ — چند خرابی همزمان: progress.failures آرایه کلیدها (مثلاً ["internet","other"])؛ failure تکی قدیمی هم پذیرفته می‌شود. خروجی GET services/{id} و search کلید progress را با steps/failures/failures_labels/failure/failure_label/done/total/pct/status/last_label/excluded (مراحل ردشده) برمی‌گرداند. تغییرات پیشرفت با برچسب فارسی مراحل در تاریخچه و گزارش فعالیت ثبت می‌شوند.', 'ثبت/ویرایش سرویس', array(
-                                        $arg( 'progress.steps', 'array', 'کلیدهای مراحل انجام‌شده (به هر ترتیبی — سرور مرتب/اعتبارسنجی/آبشاری می‌کند)' ),
-                                        $arg( 'progress.skipped', 'array', 'کلیدهای مراحل ردشده توسط کاربر — آبشار از آن‌ها می‌پرد (اختیاری)' ),
-                                        $arg( 'progress.failures', 'array', '۱.۱۴.۰ — آرایه خرابی‌ها: ["los","internet","phone","other"] — آرایه خالی = رفع همه خرابی‌ها' ),
-                                        $arg( 'progress.failure', 'string', 'legacy — los | phone | internet | other | خالی (رفع خرابی)' ),
-                                ), array( 'progress' => array( 'steps' => array( 'infra', 'fat', 'drop' ), 'skipped' => array(), 'failures' => array( 'internet', 'other' ) ) ) ),
-                                $ep( 'POST', 'services/bulk', 'تغییر گروهی/تکی پیشرفت و وضعیت', 'اعمال یک‌باره پیشرفت دایری + خرابی + فیلدهای سرویس روی فهرستی از سرویس‌ها (ids). mode: up_to = تنظیم تا مرحله (آبشاری — همه مراحل قبل خودکار تیک می‌خورند)، add/remove = افزودن/حذف مراحل خاص، clear = پاک‌کردن، خالی = فقط خرابی/فیلد. skipped_policy: keep (مراحل ردشده توسط کاربر حفظ شوند — پیش‌فرض) / reset (بدون استثنا). ۱.۱۴.۰ — failures: آرایه خرابی‌ها (null = بدون تغییر؛ آرایه خالی = رفع همه)؛ failure تکی قدیمی هم پذیرفته می‌شود. service: {slug: value} فیلدهای سرویس (مثل f_mobile یا f_misc_notes). هر تغییر در تاریخچه و گزارش فعالیت با علامت «تغییر گروهی» ثبت می‌شود؛ dry_run = محاسبه بدون ذخیره. دسترسی: قابلیت «ویرایش سریع» — به‌طور پیش‌فرض فقط مدیر کل سایت؛ برای نقش‌ها از «نقش‌ها و دسترسی‌ها» قابل اعطاست.', 'ویرایش سریع (⚡/🚀) — فقط مدیر کل به‌طور پیش‌فرض', array(
+                        array( 'title' => 'تغییر گروهی فیلدها (۲.۰.۱)', 'items' => array(
+                                $ep( 'POST', 'services/bulk', 'تغییر گروهی/تکی فیلدهای سرویس', 'اعمال فیلدهای سرویس روی فهرستی از سرویس‌ها (ids) — مثلاً «آخرین وضعیت اینترنت/تلفن». service: {slug: value}؛ هر تغییر در تاریخچه و گزارش فعالیت با علامت «تغییر گروهی» ثبت می‌شود؛ dry_run = محاسبه بدون ذخیره. دسترسی: قابلیت «ویرایش سریع» — به‌طور پیش‌فرض فقط مدیر کل سایت؛ برای نقش‌ها از «نقش‌ها و دسترسی‌ها» قابل اعطاست. (نسخه‌های قبل پیشرفت دایری را هم تغییر می‌دادند — با حذف کامل دایری در ۲.۰.۱، کلیدهای progress/mode/step/failures قدیمی نادیده گرفته می‌شوند.)', 'ویرایش سریع (⚡/🚀) — فقط مدیر کل به‌طور پیش‌فرض', array(
                                         $arg( 'ids', 'array', 'شناسه سرویس‌ها (حداکثر ۵۰۰۰)' ),
-                                        $arg( 'progress.mode', 'string', 'up_to | add | remove | clear | خالی' ),
-                                        $arg( 'progress.step', 'string', 'کلید مرحله برای up_to یا all = همه ۱۶ مرحله' ),
-                                        $arg( 'progress.steps', 'array', 'کلیدها برای add/remove' ),
-                                        $arg( 'progress.skipped_policy', 'string', 'keep (پیش‌فرض) | reset' ),
-                                        $arg( 'progress.failures', 'array', '۱.۱۴.۰ — آرایه خرابی‌ها؛ null=بدون تغییر | [] = رفع همه | ["los","other"]' ),
-                                        $arg( 'progress.failure', 'string', 'legacy — null=بدون تغییر | خالی=رفع | los|phone|internet|other' ),
-                                        $arg( 'service', 'object', 'فیلدهای سرویس مثل {"f_mobile": "۰۹۱۲…", "f_misc_notes": "…"}' ),
+                                        $arg( 'service', 'object', 'فیلدهای سرویس مثل {"f_mobile": "۰۹۱۲…", "f_misc_notes": "…"} (الزامی)' ),
                                         $arg( 'dry_run', 'bool', 'true = فقط پیش‌نمایش بدون ذخیره' ),
-                                ), array( 'ids' => array( 12, 45, 78 ), 'progress' => array( 'mode' => 'up_to', 'step' => 'inet_connected', 'skipped_policy' => 'keep', 'failures' => array( 'internet' ) ), 'service' => array( 'f_misc_notes' => 'یادداشت گروهی' ) ) ),
+                                ), array( 'ids' => array( 12, 45, 78 ), 'service' => array( 'f_misc_notes' => 'یادداشت گروهی' ) ) ),
                         ) ),
 
                         array( 'title' => 'بررسی موارد تکراری (مدیر کل)', 'items' => array(
@@ -2412,7 +2402,7 @@ class TPP_Rest {
                                         $arg( 'from / to', 'date', '۱.۱۹.۰ — بازه گزارش بازه‌ای (هر دو با هم)' ),
                                         $arg( 'user_id', 'int', 'شناسه کاربر — فقط برای مدیران' ),
                                 ) ),
-                                $ep( 'POST', 'workreport', 'افزودن قلم (دستی/API)', 'افزودن قلم به گزارش روز جاری کاربر. با service_id + prefix متن قلم طبق قالب ساده‌شده ۱.۱۹.۰ ساخته می‌شود: «{اقدام} (آدرس کامل، نام خیابان یا بلوک، شماره پلاک، شماره واحد)، دایری سرویس تا مرحله (X)، مراحل باقیمانده بعدی از مرحله (Y)، خرابی اعلام‌شده: Z» (بدون شمارش مراحل/درصد). بدون سرویس، content خام ثبت می‌شود.', 'کاربر افزونه', array(
+                                $ep( 'POST', 'workreport', 'افزودن قلم (دستی/API)', 'افزودن قلم به گزارش روز جاری کاربر. با service_id + prefix متن قلم طبق قالب ساده ساخته می‌شود (۲.۰.۱): «{اقدام} (آدرس کامل، نام خیابان یا بلوک، شماره پلاک، شماره واحد)». بدون سرویس، content خام ثبت می‌شود.', 'کاربر افزونه', array(
                                         $arg( 'date', 'date', 'روز گزارش (پیش‌فرض امروز)' ),
                                         $arg( 'content', 'string', 'متن قلم (وقتی service_id ارسال نشود)' ),
                                         $arg( 'service_id', 'int', 'شناسه سرویس مرتبط (اختیاری)' ),
@@ -2423,7 +2413,7 @@ class TPP_Rest {
                                         $arg( 'row_id', 'int', 'شناسه رکورد همان جدول (بازدید/تاریخچه)' ),
                                         $arg( 'date', 'date', 'روز گزارش (پیش‌فرض امروز)' ),
                                 ), array( 'src' => 'change', 'row_id' => 345, 'date' => '2026-06-12' ) ),
-                                $ep( 'POST', 'workreport/from_activity_group', 'افزودن ادغامی اقدامات یک سرویس (۱.۲۷.۰)', 'با یک فراخوانی، همه اقدامات ثبت‌شده کاربر روی یک سرویس در روز مشخص (ایجاد/ویرایش/بازدید/…) به‌صورت «یک قلم واحد» مرتب بر اساس زمان اقدام به گزارش کار اضافه می‌شود: «تحویل سرویس و رفع مشکل و بررسی (آدرس کامل، …) ، دایری سرویس تا مرحله (X) ، مراحل باقیمانده … ، خرابی اعلام‌شده: Z». اقدامات هم‌نوع تکراری در متن ادغام می‌شوند؛ ردیف‌هایی که قبلاً به قلم دیگری تبدیل شده‌اند نادیده گرفته می‌شوند و اگر همه قبلاً اضافه شده باشند خطا برمی‌گردد. کلیدهای ردیف‌های مصرف‌شده در src_row قلم ذخیره می‌شود (مخفی‌سازی در فید گزارش کار + بازگشت با حذف قلم).', 'کاربر افزونه', array(
+                                $ep( 'POST', 'workreport/from_activity_group', 'افزودن ادغامی اقدامات یک سرویس (۱.۲۷.۰)', 'با یک فراخوانی، همه اقدامات ثبت‌شده کاربر روی یک سرویس در روز مشخص (ایجاد/ویرایش/بازدید/…) به‌صورت «یک قلم واحد» مرتب بر اساس زمان اقدام به گزارش کار اضافه می‌شود (قالب ۲.۰.۱): «تحویل سرویس و رفع مشکل و بررسی (آدرس کامل، …)». اقدامات هم‌نوع تکراری در متن ادغام می‌شوند؛ ردیف‌هایی که قبلاً به قلم دیگری تبدیل شده‌اند نادیده گرفته می‌شوند و اگر همه قبلاً اضافه شده باشند خطا برمی‌گردد. کلیدهای ردیف‌های مصرف‌شده در src_row قلم ذخیره می‌شود (مخفی‌سازی در فید گزارش کار + بازگشت با حذف قلم).', 'کاربر افزونه', array(
                                         $arg( 'service_id', 'int', 'شناسه سرویس' ),
                                         $arg( 'date', 'date', 'روز گزارش (پیش‌فرض امروز)' ),
                                 ), array( 'service_id' => 12, 'date' => '2026-06-12' ) ),
@@ -2444,8 +2434,9 @@ class TPP_Rest {
                                 $ep( 'GET', 'activity/days', 'روزهای دارای فعالیت', '?from&to[&user_id] — روزهایی که کاربر فعالیت (تغییر/بازدید/جستجو/پیامک) ثبت کرده؛ برای هایلایت تقویم گزارش کار.', 'کاربر افزونه', array( $arg( 'from / to', 'date', 'بازه YYYY-MM-DD' ) ) ),
                         ) ),
 
-                        array( 'title' => 'بازبینی (۱.۲۰.۰)', 'items' => array(
-                                $ep( 'GET', 'review/queue', 'صف سرویس‌های ارجاعی', 'سرویس‌هایی که با دسته‌بندی پیش‌فرض «ثبت جهت بازبینی و ویرایش یا تأیید مدیریت» ثبت شده‌اند — همراه آدرس کامل/بلوک/پلاک/واحد، شماره مجازی، ثبت‌کننده، وضعیت دایری و فهرست دسته‌ها/تگ‌ها برای تعیین دسته. هر سرویسی که دسته مناسب ندارد می‌تواند با این دسته به بازبینی ارجاع شود.', 'قابلیت «بازبینی سرویس‌های ارجاعی» (پیش‌فرض فقط مدیر کل؛ از نقش‌ها قابل اعطا)' ),
+                        array( 'title' => 'بازبینی (۱.۲۰.۰ — ارتقایافته در ۲.۰.۱)', 'items' => array(
+                                $ep( 'GET', 'review/queue', 'صف سرویس‌های ارجاعی', 'سرویس‌هایی که با دسته‌بندی پیش‌فرض «ثبت جهت بازبینی و ویرایش یا تأیید مدیریت» ثبت شده‌اند — همراه آدرس کامل/بلوک/پلاک/واحد، شماره مجازی، ثبت‌کننده و فهرست دسته‌ها/تگ‌ها برای تعیین دسته. هر سرویسی که دسته مناسب ندارد می‌تواند با این دسته به بازبینی ارجاع شود.', 'قابلیت «بازبینی سرویس‌های ارجاعی» (پیش‌فرض فقط مدیر کل؛ از نقش‌ها قابل اعطا)' ),
+                                $ep( 'GET', 'review/suggest', 'پیشنهاد هوشمند دسته‌بندی (۲.۰.۱)', '?service_id= — کلمات «آدرس کامل»، «نام بلوک» و «نام خیابان» سرویس استخراج و در دسته‌بندی‌های ثبت‌شده جستجو می‌شود؛ خروجی {words, suggestions: [{id, label, score, matched}]} — امتیاز (score) = تعداد تطابق کلمات؛ دسته‌ها بر اساس امتیاز رتبه‌بندی می‌شوند.', 'بازبینی سرویس‌های ارجاعی' ),
                                 $ep( 'POST', 'review/assign', 'تعیین دسته سرویس ارجاعی', '{service_id, category, tags} — بازبین دسته‌بندی/تگ درست را تعیین می‌کند؛ سرویس از صف خارج می‌شود و در تاریخچه ثبت می‌شود.', 'بازبینی سرویس‌های ارجاعی', array(), array( 'service_id' => 12, 'category' => 5, 'tags' => array( 2, 7 ) ) ),
                                 $ep( 'GET', 'review/changes', 'سجل اقدامات نصاب‌ها', 'همه ثبت/ویرایش/حذف‌های کاربران غیرمدیر (نصاب/اپراتور ثبت/…) بر حسب روز، با خلاصه تغییرات و وضعیت بازبینی (pending/kept/reverted). فیلتر: date یا from&to + user_id + status.', 'قابلیت «بازبینی اقدامات نصاب‌ها» (پیش‌فرض فقط مدیر کل)', array(
                                         $arg( 'date / from & to', 'date', 'یک روز یا بازه YYYY-MM-DD' ),
@@ -2454,7 +2445,7 @@ class TPP_Rest {
                                 ) ),
                                 $ep( 'POST', 'review/keep', 'نگه‌داشتن تغییر', '{id} — علامت «بازبینی شد/نگه داشته شد»؛ تغییر باقی می‌ماند (پیش‌فرض همه تغییرات می‌مانند).', 'بازبینی اقدامات نصاب‌ها', array(), array( 'id' => 101 ) ),
                                 $ep( 'POST', 'review/revert', 'بازگردانی به حالت قبل', '{id} — وضعیت دقیق قبل از تغییر بازمی‌گردد: ثبت → سرویس حذف می‌شود؛ ویرایش → ستون‌های سرویس/آدرس عیناً بازنویسی؛ حذف → سرویس با همان شناسه بازساز. اگر سرویس بعد از تغییر دوباره ویرایش شده باشد بازگردانی انجام نمی‌شود (محافظ تغییرات جدیدتر).', 'بازبینی اقدامات نصاب‌ها', array(), array( 'id' => 101 ) ),
-                                $ep( 'POST', 'tools/db-update', 'بروزآوری دیتابیس (۱.۲۱.۰)', 'ستون‌های یتیم (بدون فیلد فعال) هر دو جدول services/addresses پیدا می‌شود، محتوایشان قالب‌بندی‌شده («🔹 عنوان: مقدار») به فیلد «توضیحات متفرقه» سرویس‌ها منتقل و ستون‌ها کامل حذف می‌شود. پیش از اجرا پشتیبان کامل خودکار روی سرور گرفته می‌شود (پاسخ شامل متادیتای پشتیبان و ستون‌های باقی‌مانده).', 'تنظیمات (مدیر کل)' ),
+                                $ep( 'POST', 'tools/db-update', 'بروزآوری دیتابیس (۱.۲۱.۰ — ارتقایافته در ۲.۰.۱)', 'ستون‌های یتیم (بدون فیلد فعال) هر دو جدول services/addresses پیدا می‌شود، محتوایشان قالب‌بندی‌شده («🔹 عنوان: مقدار») به فیلد «توضیحات متفرقه» سرویس‌ها منتقل و ستون‌ها کامل حذف می‌شود. ۲.۰.۱: داده‌های «پیشرفت دایری» حذف‌شده هم پاک‌سازی می‌شوند — خلاصه خوانا به «توضیحات متفرقه» منتقل و ستون‌های progress_* با ایندکس‌هایشان حذف می‌شوند (گزارش در progress_cleanup پاسخ). پیش از اجرا پشتیبان کامل خودکار روی سرور گرفته می‌شود (پاسخ شامل متادیتای پشتیبان و ستون‌های باقی‌مانده).', 'تنظیمات (مدیر کل)' ),
                                 $ep( 'GET', 'tools/orphan-addresses', 'شمارش آدرس‌های بدون سرویس (۱.۲۹.۰)', 'تعداد آدرس‌هایی که هیچ سرویسی روی آن‌ها ثبت نیست (یتیم — معمولاً بقایای حذف سرویس‌ها در نسخه‌های قدیم) را برمی‌گرداند.', 'تنظیمات (مدیر کل)' ),
                                 $ep( 'POST', 'tools/orphan-addresses/cleanup', 'پاک‌سازی آدرس‌های بدون سرویس (۱.۲۹.۰)', 'آدرس‌های بدون سرویس به‌همراه رکوردهای تاریخچه یتیمشان حذف می‌شوند؛ پیش از اجرا پشتیبان کامل خودکار گرفته می‌شود (پاسخ شامل متادیتای پشتیبان برای بازگردانی یک‌کلیکی).', 'تنظیمات (مدیر کل)' ),
                         ) ),
@@ -2466,9 +2457,9 @@ class TPP_Rest {
                         ) ),
 
                         array( 'title' => 'خروجی‌ها و پشتیبان', 'items' => array(
-                                $ep( 'GET', 'export/xlsx', 'خروجی اکسل', 'نتیجه جستجو/فیلتر فعلی (همان پارامترهای search — شامل progress_status/progress_step). ۱.۱۲.۰: ستون‌های «وضعیت دایری»، «آخرین مرحله دایری» و «خرابی اعلام‌شده» به خروجی اضافه شد.', 'مشاهده یا خروجی' ),
-                                $ep( 'GET', 'export/pdf', 'خروجی PDF بومی', 'PDF با فونت فارسی تعبیه‌شده + ستون‌های پیشرفت دایری (۱.۱۲.۰).', 'مشاهده یا خروجی' ),
-                                $ep( 'GET', 'export/print', 'صفحه چاپ', 'HTML آماده چاپ مرورگر + ستون‌های پیشرفت دایری (۱.۱۲.۰).', 'مشاهده یا خروجی' ),
+                                $ep( 'GET', 'export/xlsx', 'خروجی اکسل', 'نتیجه جستجو/فیلتر فعلی (همان پارامترهای search — متن/فیلتر فیلدها/بازه ویرایش/دسته/تگ؛ ۲.۰.۱: بدون ستون‌های دایری).', 'مشاهده یا خروجی' ),
+                                $ep( 'GET', 'export/pdf', 'خروجی PDF بومی', 'PDF با فونت فارسی تعبیه‌شده (۲.۰.۱ — بدون ستون‌های دایری).', 'مشاهده یا خروجی' ),
+                                $ep( 'GET', 'export/print', 'صفحه چاپ', 'HTML آماده چاپ مرورگر (۲.۰.۱ — بدون ستون‌های دایری).', 'مشاهده یا خروجی' ),
                                 $ep( 'GET', 'template', 'فایل نمونه اکسل', 'قالب خالی با ستون‌های فعلی.', 'کاربر افزونه' ),
                                 $ep( 'GET', 'backup', 'پشتیبان JSON', '?with_history=1&with_activity=1&with_sms_log=1 — قابل بازیابی روی هر سرور/دامنه.', 'تنظیمات' ),
                                 $ep( 'GET', 'backup/info', 'اطلاعات پشتیبان', 'تعداد رکورد هر جدول + حجم تقریبی + محدودیت‌های PHP.', 'تنظیمات' ),

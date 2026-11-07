@@ -204,7 +204,7 @@ TPP.views = TPP.views || {};
                 document.getElementById('content').innerHTML = `
                 <div class="card">
                         <h3>📝 گزارش کار</h3>
-                        <p class="muted">گزارش اقدامات انجام‌شده هر روز برای ارائه به مدیران شرکت — از فعالیت‌های همان روز یا به‌صورت دستی ساخته می‌شود و قلم‌های آن قابل افزودن، ویرایش و حذف است. متن هر قلم ساده است: «اقدام (آدرس)، دایری سرویس تا مرحله (X)، خرابی اعلام‌شده». اقلام بر اساس دسته‌بندی سرویس گروه‌بندی و شماره‌گذاری می‌شوند.</p>
+                        <p class="muted">گزارش اقدامات انجام‌شده هر روز برای ارائه به مدیران شرکت — از فعالیت‌های همان روز یا به‌صورت دستی ساخته می‌شود و قلم‌های آن قابل افزودن، ویرایش و حذف است. متن هر قلم ساده است: «اقدام (آدرس کامل، بلوک، پلاک، واحد)». اقلام بر اساس دسته‌بندی سرویس گروه‌بندی و شماره‌گذاری می‌شوند.</p>
                         <div class="wr-period-row">
                                 <button class="btn wr-period${wr.period === 'day' ? ' btn-primary' : ''}" data-period="day" title="گزارش یک روز خاص">📅 روزانه</button>
                                 <button class="btn wr-period${wr.period === 'week' ? ' btn-primary' : ''}" data-period="week" title="گزارش هفته جاری (شنبه تا جمعه)">هفتگی</button>
@@ -821,7 +821,7 @@ TPP.views = TPP.views || {};
          * اقدامات انجام‌شده روی آن داخل کارت خودش فهرست می‌شود
          * (درخواست کاربر ۱.۲۲.۰ — حذف ردیف‌های تکراری یک سرویس)
          * از ۱.۲۴.۰ — سربرگ کارت مشخصات کامل سرویس را نشان می‌دهد:
-         * آدرس کامل، خیابان/بلوک، پلاک، واحد، دسته، تگ‌ها و آخرین وضعیت دایری
+         * آدرس کامل، خیابان/بلوک، پلاک، واحد، دسته و تگ‌ها (۲.۰.۱: بدون وضعیت دایری)
          * ============================================================ */
 
         const FEED_ICONS = { change: '📝', view: '👁', sms: '📨' };
@@ -872,7 +872,7 @@ TPP.views = TPP.views || {};
                 card.innerHTML = `
                 <div class="card">
                         <h3>🕘 فعالیت‌های این روز ${self ? '' : '(' + esc(wr.data.user_name || '') + ')'}</h3>
-                        <p class="muted">تغییر / بازدید / ایجاد و پیامک‌های همین روز (جستجوها نمایش داده نمی‌شوند) — هر سرویس فقط یک‌بار با کارت اختصاصی نمایش داده می‌شود: سربرگ کارت مشخصات کامل سرویس (آدرس کامل، خیابان/بلوک، پلاک، واحد، دسته، تگ‌ها و آخرین وضعیت دایری) و بدنه کارت فهرست اقدامات همان روز است؛ دکمه «➕» همه اقدامات همان روز سرویس را به‌صورت «یک قلم ادغام‌شده» مرتب بر اساس زمان اقدام به گزارش کار اضافه می‌کند (مثلاً «تحویل سرویس و رفع مشکل و بررسی»). فعالیت‌هایی که به گزارش کار اضافه شده‌اند از این فهرست حذف می‌شوند و فقط اقدامات باقی‌مانده نمایش داده می‌شوند.</p>
+                        <p class="muted">تغییر / بازدید / ایجاد و پیامک‌های همین روز (جستجوها نمایش داده نمی‌شوند) — هر سرویس فقط یک‌بار با کارت اختصاصی نمایش داده می‌شود: سربرگ کارت مشخصات کامل سرویس (آدرس کامل، خیابان/بلوک، پلاک، واحد، دسته و تگ‌ها) و بدنه کارت فهرست اقدامات همان روز است؛ دکمه «➕» همه اقدامات همان روز سرویس را به‌صورت «یک قلم ادغام‌شده» مرتب بر اساس زمان اقدام به گزارش کار اضافه می‌کند (مثلاً «تحویل سرویس و رفع مشکل و بررسی»). فعالیت‌هایی که به گزارش کار اضافه شده‌اند از این فهرست حذف می‌شوند و فقط اقدامات باقی‌مانده نمایش داده می‌شوند.</p>
                         ${body}${addedNote}${older}
                 </div>`;
 
@@ -886,25 +886,11 @@ TPP.views = TPP.views || {};
         }
 
         /**
-         * کارت یک سرویس: سربرگ (شناسه + دکمه مشاهده + نشان وضعیت دایری + شبکه اطلاعات کامل)
+         * کارت یک سرویس: سربرگ (شناسه + دکمه مشاهده + شبکه اطلاعات کامل)
          * + فهرست اقدامات روز + یک دکمه افزودن
-         * ۱.۲۴.۰ — سربرگ کارت طبق درخواست کاربر کامل شد: آدرس کامل، نام خیابان/بلوک،
-         * شماره پلاک، شماره واحد، دسته‌بندی، تگ‌ها و آخرین وضعیت دایری سرویس
+         * ۱.۲۴.۰ — سربرگ کارت: آدرس کامل، نام خیابان/بلوک، شماره پلاک، شماره واحد، دسته‌بندی و تگ‌ها
+         * ۲.۰.۱ — نشان «آخرین وضعیت دایری» (diaryChipHtml) حذف شد
          */
-
-        /** نشان «آخرین وضعیت دایری» سرویس — برچسب آماده سرور + درصد پیشرفت + جزئیات آخرین مرحله در tooltip */
-        function diaryChipHtml(svc) {
-                const p = svc && svc.progress;
-                if (!p) return '';
-                const fails = (p.failures && p.failures.length) ? p.failures : [];
-                let label = String(p.status_label || '');
-                if (!fails.length && p.status === 'progress' && p.pct) label += ' (' + faNum(p.pct) + '٪)';
-                const cls = fails.length ? 'chip err' : (p.status === 'done' ? 'chip ok' : (p.status === 'progress' ? 'chip warn' : 'chip'));
-                const title = p.last_label
-                        ? 'آخرین مرحله دایری: ' + p.last_label + ' (' + faNum(p.done || 0) + ' از ' + faNum(p.total || 16) + ' مرحله)' + (p.excluded_count ? ' — ' + faNum(p.excluded_count) + ' مرحله ردشده توسط کاربر' : '')
-                        : 'آخرین وضعیت دایری ثبت‌شده برای این سرویس';
-                return '<span class="' + cls + ' wr-diary-chip" title="' + esc(title) + '">' + esc(label) + '</span>';
-        }
 
         /** شبکه اطلاعات سربرگ کارت: آدرس کامل، خیابان/بلوک، پلاک، واحد، دسته، تگ‌ها (+ شماره مجازی) */
         function svcInfoHtml(svc) {
@@ -933,7 +919,6 @@ TPP.views = TPP.views || {};
                                 <div class="wr-svc-id">
                                         <span class="chip">🛰️ سرویس #${faNum(g.sid)}</span>
                                         <button class="btn btn-sm" data-wr-svc="${esc(String(g.sid))}" title="بازکردن صفحه سرویس">مشاهده سرویس</button>
-                                        ${diaryChipHtml(svc)}
                                 </div>
                                 ${svcInfoHtml(svc)}
                         </div>
@@ -967,7 +952,7 @@ TPP.views = TPP.views || {};
         /**
          * افزودن همه اقدامات یک سرویس به گزارش کار — ۱.۲۷.۰ (درخواست کاربر):
          * یک کلیک، «تمام» اقدامات آن روزِ سرویس (ایجاد/ویرایش/بازدید/…) را به‌صورت «یک قلم ادغام‌شده»
-         * مرتب بر اساس زمان اقدام به گزارش اضافه می‌کند، مثل «تحویل سرویس و رفع مشکل و بررسی (آدرس…) ، دایری …».
+         * مرتب بر اساس زمان اقدام به گزارش اضافه می‌کند، مثل «تحویل سرویس و رفع مشکل و بررسی (آدرس…)».
          * سرور خودش اقدامات روز را از تاریخچه/بازدید می‌خواند (شامل ردیف‌های خارج از صفحه فید)؛
          * اقداماتی که قبلاً تبدیل شده‌اند نادیده گرفته می‌شوند و در فید مخفی می‌مانند (۱.۲۶.۰).
          */
@@ -1024,7 +1009,7 @@ TPP.views = TPP.views || {};
                 if (!canEdit()) { toast('این گزارش متعلق به شما نیست.', 'warn'); return; }
                 let picked = null; // سرویس انتخاب‌شده
                 // وضعیت جستجوی سرویس (مثل صفحه سرویس‌ها: متن + فیلتر + صفحه‌بندی)
-                const search = { q: '', filters: {}, prog: '', cat: '', tags: [], page: 1, total: 0, per: 10 };
+                const search = { q: '', filters: {}, cat: '', tags: [], page: 1, total: 0, per: 10 };
 
                 const schema = TPP.app.state().schema || { service: [], address: [] };
                 const filterFields = (schema.address || []).concat(schema.service || []).filter((f) => f.is_searchable);
@@ -1044,11 +1029,7 @@ TPP.views = TPP.views || {};
                         '<button class="btn" id="wr-svc-filter-toggle" title="فیلتر بر اساس مقادیر اختصاصی هر فیلد (مثل صفحه سرویس‌ها)">🎛 فیلتر</button>' +
                         '</div>' +
                         '<div id="wr-filter-panel" class="filters-panel hidden" style="margin-top:8px">' +
-                        '<div class="filters-title"><span>فیلتر بر اساس فیلدها / وضعیت دایری / دسته‌بندی و تگ:</span><button class="btn btn-sm" id="wr-f-clear">پاک‌کردن فیلترها</button></div>' +
-                        '<div class="prog-filter">' +
-                        '<label class="pf-label">🚀 وضعیت دایری:</label>' +
-                        '<select id="wr-f-prog" class="btn"><option value="">همه وضعیت‌ها</option><option value="progress">🚧 در حال دایری</option><option value="done">✅ دایری کامل</option><option value="none">⏳ شروع نشده</option><option value="fail">❌ خرابی (همه)</option><option value="fail_los">❌ LOS</option><option value="fail_phone">❌ قطع تلفن</option><option value="fail_internet">❌ قطع اینترنت</option><option value="fail_other">❌ سایر</option></select>' +
-                        '</div>' +
+                        '<div class="filters-title"><span>فیلتر بر اساس فیلدها / دسته‌بندی و تگ:</span><button class="btn btn-sm" id="wr-f-clear">پاک‌کردن فیلترها</button></div>' +
                         '<div class="grid-3" id="wr-f-cats" style="margin-top:8px"></div>' +
                         '<div class="filters-grid" id="wr-filter-grid" style="margin-top:8px"></div>' +
                         '<div class="filters-actions"><button class="btn btn-primary" id="wr-f-apply">🔍 جستجو با فیلترها</button></div>' +
@@ -1061,7 +1042,7 @@ TPP.views = TPP.views || {};
                         '<option value="__custom">✍️ سایر (نوشتن دستی)…</option>' +
                         '</select>' +
                         '<textarea id="wr-action" rows="2" style="width:100%;resize:vertical;margin-top:8px" placeholder="مثال: رفع مشکل / تحویل سرویس / نصب مودم / عیب‌یابی فیوژن …"></textarea>' +
-                        '<div class="hint">با انتخاب سرویس، متن قلم ساده ساخته می‌شود: «اقدام (آدرس کامل، بلوک، پلاک، واحد) ، دایری سرویس تا مرحله (X) ، خرابی اعلام‌شده». بدون سرویس فقط متن اقدام ثبت می‌شود.</div></div>' +
+                        '<div class="hint">با انتخاب سرویس، متن قلم ساده ساخته می‌شود: «اقدام (آدرس کامل، بلوک، پلاک، واحد)». بدون سرویس فقط متن اقدام ثبت می‌شود.</div></div>' +
                         '<div id="wr-preview" class="wr-preview"></div>' +
                         '</div>' +
                         '<div class="modal-foot"><button class="btn" data-close>انصراف</button><button class="btn btn-primary" id="wr-submit">✅ ثبت در گزارش</button></div>',
@@ -1156,12 +1137,9 @@ TPP.views = TPP.views || {};
                         TPP.api.request('GET', 'categories').then((c) => { wr.cats = c; renderCats(c); }).catch(() => renderCats(null));
                 } else renderCats(wr.cats);
 
-                const progSel = el.querySelector('#wr-f-prog');
-                if (progSel) progSel.addEventListener('change', () => { search.prog = progSel.value; });
                 el.querySelector('#wr-f-clear').addEventListener('click', () => {
-                        search.filters = {}; search.prog = ''; search.cat = ''; search.tags = [];
+                        search.filters = {}; search.cat = ''; search.tags = [];
                         grid.querySelectorAll('[data-ff]').forEach((i) => { i.value = ''; });
-                        if (progSel) progSel.value = '';
                         const catSel = el.querySelector('#wr-f-cat');
                         if (catSel) catSel.value = '';
                         el.querySelectorAll('.tag-chip.on').forEach((l) => { l.classList.remove('on'); const i = l.querySelector('input'); if (i) i.checked = false; });
@@ -1218,7 +1196,7 @@ TPP.views = TPP.views || {};
                 async function doSearch() {
                         const qEl = el.querySelector('#wr-svc-q');
                         search.q = qEl ? qEl.value.trim() : '';
-                        const hasFilters = Object.keys(search.filters).length || search.prog || search.cat || search.tags.length;
+                        const hasFilters = Object.keys(search.filters).length || search.cat || search.tags.length;
                         if (!search.q && !hasFilters) { toast('عبارت جستجو را وارد کنید یا از «فیلتر» استفاده کنید.', 'warn'); return; }
                         const btn = el.querySelector('#wr-svc-filter');
                         btn.disabled = true;
@@ -1227,7 +1205,6 @@ TPP.views = TPP.views || {};
                                 const params = { page: search.page, per_page: search.per };
                                 if (search.q) params.query = search.q;
                                 if (Object.keys(search.filters).length) params.filters = JSON.stringify(search.filters);
-                                if (search.prog) params.progress_status = search.prog;
                                 if (search.cat) params.category = search.cat;
                                 if (search.tags.length) params.tags = search.tags.join(',');
                                 const data = await TPP.api.request('GET', 'search', null, params);

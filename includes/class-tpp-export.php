@@ -68,11 +68,7 @@ class TPP_Export {
                 foreach ( $slugs as $slug ) {
                         $sample[] = isset( $by_slug[ $slug ] ) ? $by_slug[ $slug ] : 'نمونه';
                 }
-                // ۱.۱۳.۰ — ستون‌های پیشرفت دایری/خرابی در قالب (ایمپورت همان مقادیر را می‌فهمد)
-                $headers[] = 'پیشرفت دایری';
-                $sample[]  = 'اینترنت متصل می‌باشد';
-                $headers[] = 'خرابی اعلام‌شده';
-                $sample[]  = 'رفع';
+                // ۲.۰.۱ — ستون‌های «پیشرفت دایری/خرابی» از قالب حذف شدند (دایری از افزونه خارج شد)
                 // ۱.۱۹.۰ — ستون‌های دسته‌بندی/تگ (مقدار = برچسب؛ در ایمپورت ناموجود خودکار ساخته می‌شود)
                 $headers[] = 'دسته‌بندی پروژه';
                 $sample[]  = 'پروژه سازمانی';
@@ -117,71 +113,7 @@ class TPP_Export {
                 return $v;
         }
 
-        /* ---- ۱.۱۲.۰/۱.۱۳.۰: ستون‌های پیشرفت دایری در خروجی‌ها ---- */
-
-        /** سلول‌های پیشرفت یک ردیف: [وضعیت، آخرین مرحله، خرابی، مراحل انجام‌شده، مراحل ردشده] */
-        private static function progress_cells( $row ) {
-                $p = is_array( $row ) && isset( $row['progress'] ) && is_array( $row['progress'] ) ? $row['progress'] : array();
-                $done = isset( $p['done'] ) ? (int) $p['done'] : 0;
-                $total = isset( $p['total'] ) ? (int) $p['total'] : 16;
-                $excluded = ( isset( $p['excluded'] ) && is_array( $p['excluded'] ) ) ? $p['excluded'] : array();
-                $status = 'شروع نشده';
-                // ۱.۱۴.۰ — خرابی‌ها آرایه‌اند (failures)؛ failure تکی برای سازگاری
-                $failures = ( isset( $p['failures'] ) && is_array( $p['failures'] ) ) ? $p['failures'] : ( ! empty( $p['failure'] ) ? array( $p['failure'] ) : array() );
-                if ( ! empty( $failures ) ) {
-                        $status = 'خرابی اعلام‌شده';
-                } elseif ( $done >= $total && $total > 0 ) {
-                        $status = 'کامل (' . $done . ' از ' . $total . ')';
-                } elseif ( $done > 0 ) {
-                        $status = 'در جریان (' . $done . ' از ' . $total . ')';
-                }
-                if ( $excluded ) {
-                        $status .= ' — ' . count( $excluded ) . ' مرحله ردشده';
-                }
-                $last = isset( $p['last_label'] ) ? (string) $p['last_label'] : '';
-                // ۱.۱۴.۰ — متن خرابی: برچسب همه خرابی‌ها (failures_labels) یا برچسب تکی قدیمی
-                $fail = '';
-                if ( isset( $p['failures_labels'] ) && is_array( $p['failures_labels'] ) && ! empty( $p['failures_labels'] ) ) {
-                        $fail = implode( '، ', array_filter( $p['failures_labels'] ) );
-                } elseif ( isset( $p['failure_label'] ) ) {
-                        $fail = (string) $p['failure_label'];
-                }
-                // ۱.۱۳.۰ — فهرست کامل مراحل انجام‌شده/ردشده برای اکسل (PDF/چاپ ستون فشرده دارد)
-                $steps_list = '';
-                if ( ! empty( $p['steps'] ) && is_array( $p['steps'] ) ) {
-                        $steps_list = implode( '، ', array_map( array( 'TPP_Progress', 'step_label' ), $p['steps'] ) );
-                }
-                $excl_list = $excluded ? implode( '، ', array_map( array( 'TPP_Progress', 'step_label' ), $excluded ) ) : '';
-                return array( $status, $last ? $last : '—', $fail ? $fail : '—', $steps_list, $excl_list );
-        }
-
-        /** ۱.۱۳.۰ — ستون‌های دایری برای اکسل: ۵ ستون (با فهرست مراحل) */
-        private static function progress_headers_xlsx() {
-                return array( 'وضعیت دایری', 'آخرین مرحله دایری', 'خرابی اعلام‌شده', 'مراحل انجام‌شده دایری', 'مراحل ردشده (توسط کاربر)' );
-        }
-
-        /** ۱.۱۳.۰ — ستون‌های دایری برای PDF/چاپ: ۳ ستون فشرده (وضعیت شامل تعداد ردشده) */
-        private static function progress_headers_compact() {
-                return array( 'وضعیت دایری', 'آخرین مرحله دایری', 'خرابی اعلام‌شده' );
-        }
-
-        /** برچسب فیلتر پیشرفت دایری برای سربرگ گزارش‌ها — خالی وقتی فیلتری نیست */
-        private static function progress_label( $args ) {
-                $st = sanitize_key( (string) ( $args['progress_status'] ?? '' ) );
-                $labels = array(
-                        'none' => 'دایری: شروع‌نشده', 'progress' => 'دایری: در جریان', 'done' => 'دایری: کامل',
-                        'fail' => 'وضعیت: خرابی اعلام‌شده',
-                        'fail_los' => 'خرابی: LOS', 'fail_phone' => 'خرابی: قطع تلفن',
-                        'fail_internet' => 'خرابی: قطع اینترنت', 'fail_other' => 'خرابی: سایر',
-                );
-                $out = isset( $labels[ $st ] ) ? $labels[ $st ] : '';
-                $step = sanitize_key( (string) ( $args['progress_step'] ?? '' ) );
-                if ( $step ) {
-                        $state = ( 'todo' === sanitize_key( (string) ( $args['progress_step_state'] ?? 'done' ) ) ) ? 'انجام‌نشده' : 'انجام‌شده';
-                        $out .= ( $out ? ' + ' : '' ) . 'مرحله «' . TPP_Progress::step_label( $step ) . '»: ' . $state;
-                }
-                return $out;
-        }
+        /* ---- ۲.۰.۱ — ستون‌های پیشرفت دایری از همه خروجی‌ها حذف شدند ---- */
 
         /** برچسب بازه زمانی ویرایش برای گزارش‌ها — خالی وقتی فیلتری نیست */
         private static function range_label( $args ) {
@@ -208,10 +140,6 @@ class TPP_Export {
                 foreach ( $cols as $c ) {
                         $headers[] = $c['label'];
                 }
-                // ۱.۱۳.۰ — پنج ستون دایری در اکسل (شامل فهرست کامل مراحل/ردشده‌ها)
-                foreach ( self::progress_headers_xlsx() as $h ) {
-                        $headers[] = $h;
-                }
                 // ۱.۱۹.۰ — ستون‌های دسته‌بندی/تگ
                 $headers[] = 'دسته‌بندی پروژه';
                 $headers[] = 'تگ‌ها';
@@ -227,9 +155,6 @@ class TPP_Export {
                                 } else {
                                         $r[] = self::fmt_value( $c['slug'], $row[ $c['slug'] ] ?? '' );
                                 }
-                        }
-                        foreach ( self::progress_cells( $row ) as $cell ) {
-                                $r[] = $cell;
                         }
                         /* ۱.۱۹.۰ — دسته‌بندی/تگ (برچسب‌ها) */
                         $r[] = ( $row && $row['category'] && $row['category']['label'] ) ? $row['category']['label'] : '';
@@ -266,13 +191,12 @@ class TPP_Export {
                         'تهیه‌کننده: ' . ( $user ? $user->display_name : '' ),
                         ( ! empty( $args['query'] ) ? 'جستجو: ' . $args['query'] : '' ),
                         ( self::range_label( $args ) ? self::range_label( $args ) : '' ),
-                        ( self::progress_label( $args ) ? self::progress_label( $args ) : '' ),
                 );
 
                 $headers = array_merge(
                         array( 'شناسه' ),
                         wp_list_pluck( $cols, 'label' ),
-                        array_merge( self::progress_headers_compact(), array( 'آخرین بروزرسانی' ) ) // ۱.۱۳.۰ — فشرده برای PDF
+                        array( 'آخرین بروزرسانی' )
                 );
                 $table_rows = array();
                 foreach ( $rows as $row ) {
@@ -283,10 +207,6 @@ class TPP_Export {
                                 } else {
                                         $r[] = self::fmt_value( $c['slug'], $row[ $c['slug'] ] ?? '' );
                                 }
-                        }
-                        // ۱.۱۳.۰ — PDF: ۳ سلول فشرده (وضعیت شامل تعداد ردشده)
-                        foreach ( array_slice( self::progress_cells( $row ), 0, 3 ) as $cell ) {
-                                $r[] = $cell;
                         }
                         $r[] = TPP_Date::jalali( $row['updated_at'] ); // ۱.۱۸.۰ — شمسی/تهران
                         $table_rows[] = $r;
@@ -337,7 +257,7 @@ class TPP_Export {
                 foreach ( $cols as $c ) {
                         $head_cells .= '<th>' . esc_html( $c['label'] ) . '</th>';
                 }
-                $head_cells .= '<th>وضعیت دایری</th><th>آخرین مرحله دایری</th><th>خرابی اعلام‌شده</th><th>آخرین بروزرسانی</th>';
+                $head_cells .= '<th>آخرین بروزرسانی</th>';
 
                 $body_rows = '';
                 $i = 0;
@@ -348,14 +268,10 @@ class TPP_Export {
                                 $v = 'address' === $c['group'] ? (string) ( $row['address'][ $c['slug'] ] ?? '' ) : self::fmt_value( $c['slug'], $row[ $c['slug'] ] ?? '' );
                                 $body_rows .= '<td>' . esc_html( $v ) . '</td>';
                         }
-                        // ۱.۱۳.۰ — چاپ: ۳ سلول فشرده (وضعیت شامل تعداد ردشده)
-                        foreach ( array_slice( self::progress_cells( $row ), 0, 3 ) as $cell ) {
-                                $body_rows .= '<td>' . esc_html( $cell ) . '</td>';
-                        }
                         $body_rows .= '<td class="num">' . esc_html( TPP_Date::jalali( $row['updated_at'] ) ) . '</td></tr>';
                 }
                 if ( '' === $body_rows ) {
-                        $body_rows = '<tr><td colspan="' . ( count( $cols ) + 5 ) . '" style="text-align:center;padding:30px">سرویسی یافت نشد</td></tr>';
+                        $body_rows = '<tr><td colspan="' . ( count( $cols ) + 2 ) . '" style="text-align:center;padding:30px">سرویسی یافت نشد</td></tr>';
                 }
 
                 $meta_lines = array(
@@ -368,9 +284,6 @@ class TPP_Export {
                 }
                 if ( self::range_label( $args ) ) {
                         $meta_lines[] = esc_html( self::range_label( $args ) );
-                }
-                if ( self::progress_label( $args ) ) {
-                        $meta_lines[] = esc_html( self::progress_label( $args ) );
                 }
 
                 $site = esc_html( get_bloginfo( 'name' ) );
@@ -632,9 +545,7 @@ class TPP_Export {
 
                 // ۱) ستون‌های داینامیک پشتیبان باید روی مقصد وجود داشته باشند
                 $added_cols = $this->ensure_backup_columns( (array) $data['fields'] );
-                // ۱.۱۲.۰ — ستون‌های پیشرفت دایری هم اگر در مقصد نباشند ساخته می‌شوند
-                TPP_Progress::ensure_columns();
-                // ۱.۱۹.۰ — ستون‌های دسته‌بندی/تگ + جدول categories
+                // ۱.۱۹.۰ — ستون‌های دسته‌بندی/تگ + جدول categories (۲.۰.۱ — ستون‌های progress_* دیگر ساخته نمی‌شوند)
                 TPP_Categories::ensure_table();
                 TPP_Categories::ensure_columns();
                 if ( $added_cols > 0 ) {

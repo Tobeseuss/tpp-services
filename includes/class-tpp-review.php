@@ -218,7 +218,7 @@ class TPP_Review {
                                 'created_by'     => $creator ? $creator->display_name : '',
                                 'created_at'     => (string) ( $s['created_at'] ?? '' ),
                                 'updated_at'     => (string) ( $s['updated_at'] ?? '' ),
-                                'progress'       => TPP_Progress::summary( $s ),
+                                // ۲.۰.۱ — خلاصه پیشرفت دایری حذف شد
                                 'category'       => TPP_Categories::shape( $s ),
                         );
                 }
@@ -257,6 +257,151 @@ class TPP_Review {
                 }
                 // source='review' → در ردیابی نصاب‌ها ثبت نمی‌شود (عملیات خودِ بازبینی است)
                 return tpp()->services()->update( $service_id, $data, array( 'user_id' => $user_id, 'source' => 'review' ) );
+        }
+
+        /* ---------------------------------------------------------------------
+         * ۲.۰.۱ — پیشنهاد هوشمند دسته‌بندی (درخواست کاربر)
+         *
+         * با کلیک روی «تعیین دسته‌بندی»، کلمات «آدرس کامل»، «نام بلوک» و «نام خیابان»
+         * استخراج و در دسته‌بندی‌های ثبت‌شده جستجو می‌شود؛ دسته‌ها بر اساس تعداد
+         * تطابق‌های یافت‌شده (تعداد کلمات مشترک) رتبه‌بندی و پیشنهاد می‌شوند.
+         * ------------------------------------------------------------------- */
+
+        /** استخراج کلمات معنادار از متن آدرس — نرمال‌سازی فارسی + حذف کلمات عمومی */
+        private static function address_words( $text ) {
+                $norm = self::norm_fa( $text );
+                $norm = preg_replace( '/[^\p{L}\p{N}\s]/u', ' ', $norm ); // علائم → فاصله
+                $words = preg_split( '/\s+/u', (string) $norm, -1, PREG_SPLIT_NO_EMPTY );
+                $stop = self::stop_words();
+                $out  = array();
+                foreach ( (array) $words as $w ) {
+                        if ( mb_strlen( $w, 'UTF-8' ) < 2 ) {
+                                continue; // حروف تکی / اعداد یک‌رقمی
+                        }
+                        if ( isset( $stop[ $w ] ) ) {
+                                continue;
+                        }
+                        if ( ! in_array( $w, $out, true ) ) {
+                                $out[] = $w;
+                        }
+                }
+                return $out;
+        }
+
+        /** نرمال‌سازی متن فارسی (ی/ک عربی، نیم‌فاصله، ارقام، فاصله‌ها) */
+        private static function norm_fa( $text ) {
+                $t = (string) $text;
+                $t = str_replace( array( "\xe2\x80\x8c", "\xe2\x80\x8d" ), ' ', $t ); // نیم‌فاصله/نیم‌فاصله غیراتصال → فاصله
+                $t = str_replace( array( 'ي', 'ى', 'ﻯ' ), 'ی', $t );
+                $t = str_replace( array( 'ك' ), 'ک', $t );
+                $t = str_replace( array( 'ۀ', 'ة' ), 'ه', $t );
+                $t = str_replace( array( 'أ', 'إ', 'آ' ), 'ا', $t );
+                $t = str_replace( array( 'ؤ' ), 'و', $t );
+                $t = str_replace( array( '۰','۱','۲','۳','۴','۵','۶','۷','۸','۹' ), array( '0','1','2','3','4','5','6','7','8','9' ), $t );
+                $t = str_replace( array( '٠','١','٢','٣','٤','٥','٦','٧','٨','٩' ), array( '0','1','2','3','4','5','6','7','8','9' ), $t );
+                $t = preg_replace( '/\s+/u', ' ', trim( $t ) );
+                return $t;
+        }
+
+        /** کلمات عمومی آدرس که برای تطبیق دسته‌بندی ارزش تمایز ندارند */
+        private static function stop_words() {
+                static $stop = null;
+                if ( null === $stop ) {
+                        $base = array(
+                                'است', 'به', 'از', 'که', 'در', 'و', 'با', 'برای', 'روی', 'سرویس', 'خدمات',
+                                'پلاک', 'واحد', 'طبقه', 'واحدها', 'قطعه', 'فاز', 'مرحله', 'کد', 'شماره', 'تلفن',
+                                'منطقه', 'شهر', 'شهرستان', 'استان', 'ایران', 'دهستان', 'روستا',
+                        );
+                        foreach ( $base as $w ) {
+                                $stop[ self::norm_fa( $w ) ] = true;
+                        }
+                }
+                return $stop;
+        }
+
+        /**
+         * پیشنهاد دسته‌بندی برای یک سرویس — خروجی:
+         * {service_id, words: [کلمات جستجوشده], suggestions: [{id,label,score,matched:[…]}], total_categories}
+         * امتیاز = تعداد کلمات آدرس که در عنوان دسته یافت شد + پاداش تطبیق معکوس (کلمه دسته داخل آدرس)
+         */
+        public static function suggest_categories( $service_id, $limit = 8 ) {
+                $service_id = (int) $service_id;
+                $service = tpp()->services()->get( $service_id );
+                if ( ! $service ) {
+                        return new WP_Error( 'tpp_not_found', 'سرویس یافت نشد.' );
+                }
+                $addr = ! empty( $service['address_id'] ) ? tpp()->services()->get_address( (int) $service['address_id'] ) : null;
+
+                // متن‌های مبدأ جستجو: آدرس کامل + نام بلوک + نام خیابان (فیلد خیابان اگر تعریف شده باشد)
+                $texts = array(
+                        (string) ( $addr['f_full_address'] ?? '' ),
+                        (string) ( $addr['f_block'] ?? '' ),
+                );
+                foreach ( TPP_Fields::all( 'address' ) as $f ) {
+                        $lbl = self::norm_fa( (string) $f['label'] );
+                        if ( false !== mb_stripos( $lbl, 'خیابان' ) && ! empty( $addr[ $f['slug'] ] ) ) {
+                                $texts[] = (string) $addr[ $f['slug'] ];
+                        }
+                }
+                $haystack = self::norm_fa( implode( ' ', array_filter( $texts ) ) );
+                $words    = self::address_words( $haystack );
+
+                $categories = TPP_Categories::categories();
+                $suggestions = array();
+                if ( $words && $categories ) {
+                        foreach ( $categories as $c ) {
+                                $cat_norm  = self::norm_fa( (string) $c['label'] );
+                                $matched   = array();
+                                $score     = 0;
+                                foreach ( $words as $w ) {
+                                        // کلمه آدرس داخل عنوان دسته؟
+                                        if ( false !== mb_stripos( $cat_norm, $w ) ) {
+                                                $score++;
+                                                $matched[] = $w;
+                                                continue;
+                                        }
+                                        // کلمات عنوان دسته داخل آدرس؟ (تطبیق معکوس — کلمه‌های >= ۳ نویسه)
+                                        if ( mb_strlen( $w, 'UTF-8' ) >= 3 ) {
+                                                $cwords = preg_split( '/\s+/u', $cat_norm, -1, PREG_SPLIT_NO_EMPTY );
+                                                foreach ( (array) $cwords as $cw ) {
+                                                        if ( mb_strlen( $cw, 'UTF-8' ) >= 3 && false !== mb_stripos( $haystack, $cw ) ) {
+                                                                $score++;
+                                                                $matched[] = $w;
+                                                                break;
+                                                        }
+                                                }
+                                        }
+                                }
+                                if ( $score > 0 && ! empty( $c['is_review'] ) ) {
+                                        // دسته «صف بازبینی» خودش پیشنهاد هدف نیست — فقط با تطابق قوی (۲+ کلمه) پیشنهاد می‌شود
+                                        $score--;
+                                }
+                                if ( $score > 0 ) {
+                                        $suggestions[] = array(
+                                                'id'      => (int) $c['id'],
+                                                'label'   => (string) $c['label'],
+                                                'score'   => $score,
+                                                'matched' => array_values( array_unique( $matched ) ),
+                                                'is_review' => ! empty( $c['is_review'] ),
+                                        );
+                                }
+                        }
+                }
+                // رتبه‌بندی: امتیاز بیشتر اول؛ تساوی → ترتیب تعریف
+                usort( $suggestions, static function ( $a, $b ) {
+                        if ( $a['score'] === $b['score'] ) {
+                                return 0;
+                        }
+                        return ( $a['score'] < $b['score'] ) ? 1 : -1;
+                } );
+                $suggestions = array_slice( $suggestions, 0, max( 1, (int) $limit ) );
+
+                return array(
+                        'service_id'       => $service_id,
+                        'words'            => $words,
+                        'suggestions'      => $suggestions,
+                        'total_categories' => count( $categories ),
+                );
         }
 
         /* ---------------------------------------------------------------------

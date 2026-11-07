@@ -68,7 +68,7 @@ class TPP_Sync {
                         case 'history.delete':
                                 $cap = 'tpp_delete_history';
                                 break;
-                        case 'service.bulk': // ۱.۱۳.۰ — تغییر گروهی پیشرفت/وضعیت از حالت آفلاین (۱.۱۳.۱: قابلیت مستقل «ویرایش سریع»)
+                        case 'service.bulk': // ۱.۱۳.۰ — تغییر گروهی فیلدها از حالت آفلاین (۲.۰.۱ — بدون دایری)
                                 $cap = 'tpp_quick_edit';
                                 break;
                         default:
@@ -105,16 +105,12 @@ class TPP_Sync {
                         $deleted = TPP_History::delete_entries( $ids );
                         $result  = array( 'status' => 'deleted', 'deleted' => (int) $deleted );
                 } elseif ( 'service.bulk' === $kind ) {
-                        // ۱.۱۳.۰ — تغییر گروهی پیشرفت/وضعیت از حالت آفلاین — idempotent (اعمال دوباره = بدون تغییر)
+                        // ۱.۱۳.۰ — تغییر گروهی فیلدهای سرویس از حالت آفلاین — idempotent (اعمال دوباره = بدون تغییر)
+                        // ۲.۰.۱ — کلیدهای progress قدیمی نادیده گرفته می‌شوند (دایری حذف شد)
                         $ids  = isset( $payload['ids'] ) && is_array( $payload['ids'] ) ? array_map( 'intval', $payload['ids'] ) : array();
                         $opts = array();
-                        foreach ( array( 'mode', 'step', 'steps', 'skipped_policy', 'failure', 'failures', 'service' ) as $k ) {
-                                if ( array_key_exists( $k, $payload ) ) {
-                                        $opts[ $k ] = $payload[ $k ];
-                                }
-                        }
-                        if ( isset( $payload['progress'] ) && is_array( $payload['progress'] ) ) {
-                                $opts = array_merge( $opts, $payload['progress'] );
+                        if ( isset( $payload['service'] ) && is_array( $payload['service'] ) ) {
+                                $opts['service'] = $payload['service'];
                         }
                         $result = $services->apply_bulk( $ids, $opts, array(
                                 'user_id' => $user_id,

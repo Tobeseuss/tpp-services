@@ -117,8 +117,8 @@ TPP.views = TPP.views || {};
                 }
                 const fieldOptions = [{ slug: '', label: '— نادیده گرفته شود —' }]
                         .concat((s.fields || []).map((f) => ({ slug: f.slug, label: (f.group_key === 'address' ? 'آدرس: ' : 'سرویس: ') + f.label })))
-                        /* ۱.۱۹.۰ — شبه‌فیلدها (دایری/خرابی/دسته/تگ) هم در فهرست نگاشت قابل انتخاب‌اند
-                           (رفع شکاف قدیمی: نگاشت خودکارِ این ستون‌ها در جدول نمایش داده نمی‌شد) */
+                        /* ۱.۱۹.۰ — شبه‌فیلدها (دسته/تگ) هم در فهرست نگاشت قابل انتخاب‌اند
+                           (۲.۰.۱ — شبه‌فیلدهای دایری/خرابی حذف شدند) */
                         .concat((s.pseudo_fields || []).map((f) => ({ slug: f.slug, label: '◆ ' + f.label })));
 
                 ws.innerHTML = `
@@ -761,18 +761,13 @@ TPP.views = TPP.views || {};
                 const scope = document.getElementById('exp-scope').value;
                 if (scope === 'filtered' && TPP.app.searchState) {
                         /* ۱.۲۱.۰ — همه فیلترهای آخرین جستجو (مثل صفحه سرویس‌ها): متن + فیلتر فیلدها +
-                         * بازه ویرایش + وضعیت دایری + دسته/تگ — قبلاً فقط متن/فیلتر رد می‌شد */
+                         * بازه ویرایش + دسته/تگ — ۲.۰.۱: فیلتر دایری حذف شد */
                         const st = TPP.app.searchState;
                         const params = {};
                         if (st.query) params.query = st.query;
                         if (Object.keys(st.filters || {}).length) params.filters = JSON.stringify(st.filters);
                         if (st.updFrom) params.upd_from = st.updFrom;
                         if (st.updTo) params.upd_to = st.updTo;
-                        if (st.prog && st.prog.status) params.progress_status = st.prog.status;
-                        if (st.prog && st.prog.step) {
-                                params.progress_step = st.prog.step;
-                                params.progress_step_state = st.prog.stepState || 'done';
-                        }
                         if (st.cat) params.category = st.cat;
                         if (st.tags && st.tags.length) params.tags = st.tags.join(',');
                         return params;
@@ -815,7 +810,7 @@ TPP.views = TPP.views || {};
                 <div class="card">
                         <h3>📋 گزارش فعالیت کاربران</h3>
                         <p class="muted">چه کسی چه سرویسی را <b>ایجاد/ویرایش/حذف</b> کرد، چه سرویسی را <b>بازدید</b> کرد و چه چیزی <b>جستجو</b> کرد — همه در یک گزارش. جستجوهای در حال تایپ (آجاکس) در پنجره زمانی تنظیم‌شده به‌صورت یک جستجوی واحد ثبت می‌شوند. مدت نگهداری از تنظیمات قابل تغییر است.</p>
-                        <p class="muted">🛰️ در تب‌های «همه» و «تغییرات»، تغییرات و اقدامات هر سرویس تجمیع می‌شود و در کارت مخصوص همان سرویس نمایش داده می‌شود — سربرگ هر کارت: آدرس کامل، نام خیابان/بلوک، شماره پلاک، شماره واحد، دسته‌بندی، تگ‌ها و آخرین وضعیت دایری سرویس.</p>
+                        <p class="muted">🛰️ در تب‌های «همه» و «تغییرات»، تغییرات و اقدامات هر سرویس تجمیع می‌شود و در کارت مخصوص همان سرویس نمایش داده می‌شود — سربرگ هر کارت: آدرس کامل، نام خیابان/بلوک، شماره پلاک، شماره واحد، دسته‌بندی و تگ‌های سرویس.</p>
                         <div id="act-stats" class="act-stats"></div>
                         <div class="search-bar" style="flex-wrap:wrap">
                                 <button class="btn ${activityState.tab === 'all' ? 'btn-primary' : ''}" data-act-tab="all">🗂 همه</button>
@@ -977,26 +972,12 @@ TPP.views = TPP.views || {};
 
         /* ۱.۲۵.۰ — کارت اختصاصی هر سرویس در تب‌های «همه» و «تغییرات» (همان طراحی گزارش کار):
          * تغییرات/اقدامات یک سرویس تجمیع و داخل کارت خودش فهرست می‌شود؛
-         * سربرگ کارت: آدرس کامل، خیابان/بلوک، پلاک، واحد، دسته، تگ‌ها و آخرین وضعیت دایری */
+         * سربرگ کارت: آدرس کامل، خیابان/بلوک، پلاک، واحد، دسته و تگ‌ها (۲.۰.۱ — بدون وضعیت دایری) */
         const actFaNum = (n) => String(n).replace(/[0-9]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[+d]);
 
         /** شرح اقدام بدون پیشوند تکراری «سرویس #N — » (شناسه سرویس در سربرگ کارت هست) */
         function actRowDetail(r) {
                 return esc(String(r.title || '').replace(/^سرویس\s*#\d+\s*—\s*/, '') || '—');
-        }
-
-        /** نشان «آخرین وضعیت دایری» سرویس — برچسب آماده سرور + درصد پیشرفت + جزئیات آخرین مرحله در tooltip */
-        function actDiaryChipHtml(svc) {
-                const p = svc && svc.progress;
-                if (!p) return '';
-                const fails = (p.failures && p.failures.length) ? p.failures : [];
-                let label = String(p.status_label || '');
-                if (!fails.length && p.status === 'progress' && p.pct) label += ' (' + actFaNum(p.pct) + '٪)';
-                const cls = fails.length ? 'chip err' : (p.status === 'done' ? 'chip ok' : (p.status === 'progress' ? 'chip warn' : 'chip'));
-                const title = p.last_label
-                        ? 'آخرین مرحله دایری: ' + p.last_label + ' (' + actFaNum(p.done || 0) + ' از ' + actFaNum(p.total || 16) + ' مرحله)' + (p.excluded_count ? ' — ' + actFaNum(p.excluded_count) + ' مرحله ردشده توسط کاربر' : '')
-                        : 'آخرین وضعیت دایری ثبت‌شده برای این سرویس';
-                return '<span class="' + cls + ' wr-diary-chip" title="' + esc(title) + '">' + esc(label) + '</span>';
         }
 
         /** شبکه اطلاعات سربرگ کارت: آدرس کامل، خیابان/بلوک، پلاک، واحد، دسته، تگ‌ها (+ شماره مجازی) */
@@ -1027,7 +1008,7 @@ TPP.views = TPP.views || {};
                 </div>`;
         }
 
-        /** کارت اختصاصی یک سرویس: سربرگ (شناسه + دکمه مشاهده + نشان وضعیت دایری + شبکه اطلاعات) + فهرست اقدامات */
+        /** کارت اختصاصی یک سرویس: سربرگ (شناسه + دکمه مشاهده + شبکه اطلاعات) + فهرست اقدامات */
         function actSvcCardHtml(g) {
                 const svc = g.svc || {};
                 return `
@@ -1036,7 +1017,6 @@ TPP.views = TPP.views || {};
                                 <div class="wr-svc-id">
                                         <span class="chip">🛰️ سرویس #${actFaNum(g.sid)}</span>
                                         <button class="btn btn-sm" data-act-svc-go="${esc(String(g.sid))}" title="بازکردن صفحه سرویس">مشاهده سرویس</button>
-                                        ${actDiaryChipHtml(svc)}
                                 </div>
                                 ${actSvcInfoHtml(svc)}
                         </div>
@@ -1758,8 +1738,8 @@ TPP.views = TPP.views || {};
                 </div>
 
                 <div class="card">
-                        <h3>🧮 بروزآوری دیتابیس (۱.۲۱.۰)</h3>
-                        <p class="muted">فیلدهای فعال تعریف‌شده در سیستم با ستون‌های واقعی جدول دیتابیس مقایسه می‌شود. هر ستونی که دیگر به هیچ فیلد تعریف‌شده‌ای تعلق ندارد (مثل فیلدهای حذف‌شده وضعیت اینترنت/تلفن و وای‌فای‌ها) پیدا می‌شود، <b>محتوای همه سرویس‌هایش به‌صورت قالب‌بندی‌شده («🔹 عنوان: مقدار») به فیلد «توضیحات متفرقه» همان سرویس اضافه می‌شود</b> و در پایان، ستون به‌طور کامل از دیتابیس حذف می‌گردد. <b>پیش از اجرا یک پشتیبان کامل خودکار روی سرور گرفته می‌شود.</b></p>
+                        <h3>🧮 بروزآوری دیتابیس (۱.۲۱.۰ — ارتقایافته در ۲.۰.۱)</h3>
+                        <p class="muted">فیلدهای فعال تعریف‌شده در سیستم با ستون‌های واقعی جدول دیتابیس مقایسه می‌شود. هر ستونی که دیگر به هیچ فیلد تعریف‌شده‌ای تعلق ندارد (مثل فیلدهای حذف‌شده وضعیت اینترنت/تلفن و وای‌فای‌ها) پیدا می‌شود، <b>محتوای همه سرویس‌هایش به‌صورت قالب‌بندی‌شده («🔹 عنوان: مقدار») به فیلد «توضیحات متفرقه» همان سرویس اضافه می‌شود</b> و در پایان، ستون به‌طور کامل از دیتابیس حذف می‌گردد. <b>۲.۰.۱: داده‌های «پیشرفت دایری» حذف‌شده از افزونه هم پاک‌سازی می‌شوند</b> — خلاصه خوانای مراحل/خرابی هر سرویس به «توضیحات متفرقه» منتقل و ستون‌های progress_* با ایندکس‌هایشان کامل حذف می‌شوند. <b>پیش از اجرا یک پشتیبان کامل خودکار روی سرور گرفته می‌شود.</b></p>
                         <div class="actions-row" style="display:flex;gap:8px;flex-wrap:wrap">
                                 <button class="btn btn-primary" id="dbupd-run">🧮 بروزآوری دیتابیس</button>
                         </div>
@@ -2095,17 +2075,24 @@ TPP.views = TPP.views || {};
                                 const res = await TPP.api.request('POST', 'tools/db-update');
                                 const sv = (res && res.services_table) || [];
                                 const ad = (res && res.addresses_table) || [];
+                                const pc = (res && res.progress_cleanup) || null;
                                 const orphanAfter = res && res.orphan_after ? res.orphan_after : {};
                                 const orphanCount = Object.keys(orphanAfter.service || {}).length + Object.keys(orphanAfter.address || {}).length;
+                                const hasAny = sv.length || ad.length || (pc && pc.dropped && pc.dropped.length);
                                 let html = '';
-                                if (!sv.length && !ad.length) {
+                                if (!hasAny) {
                                         html = '<div class="alert success">✅ ستون اضافه‌ای یافت نشد — دیتابیس هم‌اکنون با فیلدهای تعریف‌شده هماهنگ است.</div>';
                                 } else {
-                                        html = '<div class="alert success">✅ بروزآوری کامل شد — ' + (res.services_updated || 0).toLocaleString('fa-IR') + ' سرویس به‌روزرسانی و ' + (res.dropped || []).length + ' ستون حذف شد.</div>';
-                                        html += '<div class="table-wrap"><table class="tpp-table"><thead><tr><th>جدول</th><th>ستون حذف‌شده</th><th>عنوان فیلد</th><th class="num-cell">سرویس به‌روزشده</th></tr></thead><tbody>';
-                                        sv.forEach((c) => { html += '<tr><td>سرویس‌ها</td><td dir="ltr">' + esc(c.column) + '</td><td>' + esc(c.label) + '</td><td class="num-cell">' + (c.rows || 0).toLocaleString('fa-IR') + '</td></tr>'; });
-                                        ad.forEach((c) => { html += '<tr><td>آدرس‌ها</td><td dir="ltr">' + esc(c.column) + '</td><td>' + esc(c.label) + '</td><td class="num-cell">' + (c.rows || 0).toLocaleString('fa-IR') + '</td></tr>'; });
-                                        html += '</tbody></table></div>';
+                                        html = '<div class="alert success">✅ بروزآوری کامل شد — ' + (res.services_updated || 0).toLocaleString('fa-IR') + ' سرویس به‌روزرسانی و ' + ((res.dropped || []).length) + ' ستون حذف شد.</div>';
+                                        if (pc && pc.dropped && pc.dropped.length) {
+                                                html += '<div class="alert info">🧹 پاک‌سازی «پیشرفت دایری» (۲.۰.۱): ' + (pc.services_updated || 0).toLocaleString('fa-IR') + ' سرویس — خلاصه خوانای مراحل/خرابی به «توضیحات متفرقه» منتقل و ستون‌های progress کامل حذف شدند.</div>';
+                                        }
+                                        if (sv.length || ad.length) {
+                                                html += '<div class="table-wrap"><table class="tpp-table"><thead><tr><th>جدول</th><th>ستون حذف‌شده</th><th>عنوان فیلد</th><th class="num-cell">سرویس به‌روزشده</th></tr></thead><tbody>';
+                                                sv.forEach((c) => { html += '<tr><td>سرویس‌ها</td><td dir="ltr">' + esc(c.column) + '</td><td>' + esc(c.label) + '</td><td class="num-cell">' + (c.rows || 0).toLocaleString('fa-IR') + '</td></tr>'; });
+                                                ad.forEach((c) => { html += '<tr><td>آدرس‌ها</td><td dir="ltr">' + esc(c.column) + '</td><td>' + esc(c.label) + '</td><td class="num-cell">' + (c.rows || 0).toLocaleString('fa-IR') + '</td></tr>'; });
+                                                html += '</tbody></table></div>';
+                                        }
                                 }
                                 const bk = res && res.backup ? res.backup : null;
                                 if (bk && bk.filename) {

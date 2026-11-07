@@ -579,7 +579,9 @@ class TPP_Fields {
                 }
         }
 
-        /** ستون‌های ثابت (سیستمی) هر جدول — هرگز جزو فیلدهای داینامیک نیستند */
+        /** ستون‌های ثابت (سیستمی) هر جدول — هرگز جزو فیلدهای داینامیک نیستند
+         *  (۲.۰.۱ — ستون‌های progress_* حفظ شده‌اند تا پاک‌سازی اختصاصی‌شان با «🧮 بروزآوری دیتابیس»
+         *   با متن خوانا انجام شود — نه مهاجرت خام JSON ستون‌های یتیم) */
         private static function protected_columns( $group ) {
                 if ( 'address' === $group ) {
                         return array( 'id', 'created_by', 'created_at', 'updated_at', 'version' );
@@ -620,6 +622,193 @@ class TPP_Fields {
         }
 
         /**
+         * ۲.۰.۱ — پاک‌سازی داده‌های «پیشرفت دایری» حذف‌شده از افزونه (درخواست کاربر — بخشی از «🧮 بروزآوری دیتابیس»):
+         *  ۱) محتوای هر ستون progress_* به متن خوانا تبدیل و به «توضیحات متفرقه» همان سرویس اضافه می‌شود
+         *  ۲) ستون‌ها و ایندکس‌های progress_* به‌طور کامل از جدول services حذف می‌شوند
+         * idempotent — اجرای مجدد بدون ستون، کاری نمی‌کند. خروجی: گزارش {columns, services_updated, dropped}
+         */
+        public static function progress_cleanup() {
+                $st = TPP_DB::table( 'services' );
+                if ( ! $st ) {
+                        return array( 'columns' => array(), 'services_updated' => 0, 'dropped' => array() );
+                }
+                $cols = TPP_DB::get_results( "SHOW COLUMNS FROM {$st}" );
+                $present = array();
+                foreach ( (array) $cols as $c ) {
+                        $col = (string) ( $c['Field'] ?? '' );
+                        if ( isset( self::PROGRESS_COLUMN_LABELS[ $col ] ) ) {
+                                $present[ $col ] = self::PROGRESS_COLUMN_LABELS[ $col ];
+                        }
+                }
+                if ( empty( $present ) ) {
+                        return array( 'columns' => array(), 'services_updated' => 0, 'dropped' => array() );
+                }
+
+                // فیلد مقصد «توضیحات متفرقه» — اگر نبود بساز (مثل db_update_run)
+                if ( ! self::get( 'f_misc_notes' ) ) {
+                        self::ensure_column( $st, 'f_misc_notes', 'TEXT NULL' );
+                        $order = (int) TPP_DB::get_var( "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM " . TPP_DB::table( 'fields' ) . " WHERE group_key = %s", array( 'service' ) );
+                        TPP_DB::insert( 'fields', array(
+                                'group_key' => 'service', 'slug' => 'f_misc_notes', 'label' => 'توضیحات متفرقه',
+                                'field_type' => 'textarea', 'is_required' => 0, 'is_searchable' => 1, 'is_sensitive' => 0,
+                                'options' => null, 'sort_order' => $order, 'created_at' => TPP_Date::now(),
+                        ) );
+                        self::flush_cache();
+                }
+
+                $updated = 0;
+                $report  = array( 'columns' => array_keys( $present ), 'services_updated' => 0, 'dropped' => array() );
+
+                // ۱) انتقال متن خوانا — همه داده‌ها پیش از حذف ستون خوانده و منتقل می‌شوند
+                // (شرط WHERE فقط با ستون‌های واقعاً موجود ساخته می‌شود)
+                $conds = array();
+                if ( isset( $present['progress_done'] ) ) {
+                        $conds[] = "progress_done > 0";
+                }
+                if ( isset( $present['progress_steps'] ) ) {
+                        $conds[] = "(progress_steps IS NOT NULL AND progress_steps <> '')";
+                }
+                if ( isset( $present['progress_failure'] ) ) {
+                        $conds[] = "(progress_failure IS NOT NULL AND progress_failure <> '')";
+                }
+                if ( isset( $present['progress_failures'] ) ) {
+                        $conds[] = "(progress_failures IS NOT NULL AND progress_failures <> '')";
+                }
+                if ( $conds ) {
+                        $rows = TPP_DB::get_results( "SELECT * FROM {$st} WHERE " . implode( ' OR ', $conds ) . " LIMIT 20000" );
+                        foreach ( (array) $rows as $r ) {
+                                $text = self::progress_text_of_row( (array) $r );
+                                if ( '' === $text ) {
+                                        continue;
+                                }
+                                $old = (string) TPP_DB::get_var( "SELECT f_misc_notes FROM {$st} WHERE id = %d", array( (int) $r['id'] ) );
+                                $new = ( '' !== trim( (string) $old ) ) ? ( $old . "\n\n" . $text ) : $text;
+                                TPP_DB::update( 'services', array( 'f_misc_notes' => $new ), array( 'id' => (int) $r['id'] ) );
+                                $updated++;
+                        }
+                }
+                $report['services_updated'] = $updated;
+
+                // ۲) حذف ایندکس‌های وابسته و ستون‌ها (ایندکس‌ها با نام‌های مختلفی ساخته شده‌اند — همه بررسی می‌شوند)
+                $indexes = array();
+                foreach ( (array) TPP_DB::get_results( "SHOW INDEX FROM {$st}" ) as $ix ) {
+                        $indexes[ (string) ( $ix['Key_name'] ?? '' ) ][ (string) ( $ix['Column_name'] ?? '' ) ] = true;
+                }
+                foreach ( array_keys( $present ) as $col ) {
+                        if ( ! preg_match( '/^[a-z0-9_]{1,64}$/', $col ) ) {
+                                continue;
+                        }
+                        foreach ( array_keys( $indexes ) as $idx_name ) {
+                                if ( isset( $indexes[ $idx_name ][ $col ] ) && 1 === count( $indexes[ $idx_name ] ) ) {
+                                        TPP_DB::query( "ALTER TABLE {$st} DROP INDEX `{$idx_name}`" );
+                                        break; // هر ایندکس تک‌ستونه روی این ستون — اولی حذف می‌شود
+                                }
+                        }
+                        TPP_DB::query( "ALTER TABLE {$st} DROP COLUMN `{$col}`" );
+                        $report['dropped'][] = 'services.' . $col;
+                }
+                // ستون‌های ثابت progress پس از این پاک‌سازی از فهرست محافظت‌شده خارج می‌شوند
+                update_option( 'tpp_progress_cleaned', array( 'at' => TPP_Date::now(), 'dropped' => $report['dropped'], 'rows' => $updated ), false );
+                return $report;
+        }
+
+        /** برچسب ستون‌های progress_* برای گزارش پاک‌سازی */
+        const PROGRESS_COLUMN_LABELS = array(
+                'progress_steps'      => 'مراحل انجام‌شده دایری',
+                'progress_done'       => 'تعداد مراحل انجام‌شده دایری',
+                'progress_failure'    => 'خرابی اعلام‌شده (تکی قدیمی)',
+                'progress_failures'   => 'خرابی‌های اعلام‌شده',
+                'progress_updated_at' => 'آخرین بروزرسانی دایری',
+                'progress_excluded'   => 'مراحل ردشده توسط کاربر',
+        );
+
+        /** کاتالوگ مراحل ۱۶گانه دایری (برای متن خوانای مهاجرت — فقط در پاک‌سازی استفاده می‌شود) */
+        private static function progress_steps_map() {
+                return array(
+                        'infra' => 'زیرساخت موجود است (پیوستگی دارد)',
+                        'fat' => 'FAT و اسپلیترهای آورنده آن نصب شده',
+                        'drop' => 'دراپ‌کشی انجام شده',
+                        'fusion_fat' => 'فیوژن سمت FAT انجام شده',
+                        'atb' => 'فیوژن و نصب ATB داخل واحد انجام شده',
+                        'patch' => 'پچ‌کورد دارد یا داده می‌شود',
+                        'modem' => 'مودم دارد یا داده می‌شود',
+                        'registered' => 'ثبت‌نام شده است',
+                        'ready' => 'سرویس آماده تحویل می‌باشد',
+                        'sip_info' => 'اطلاعات مربوط به سیپ‌فون از مرکز دریافت شده یا در یارا موجود می‌باشد',
+                        'inet_config' => 'تنظیمات اینترنت انجام شده است',
+                        'inet_omc' => 'اینترنت جهت دایری به OMC ارسال شده است یا دکمه ZTP زده شده است',
+                        'inet_connected' => 'اینترنت متصل می‌باشد',
+                        'sip_config' => 'تنظیمات سیپ‌فون انجام شده است',
+                        'sip_omc' => 'اطلاعات سیپ‌فون جهت دایری به OMC ارسال شده است یا دکمه ZTP زده شده است',
+                        'phone_connected' => 'تلفن متصل می‌باشد',
+                );
+        }
+
+        /** برچسب خرابی‌های دایری */
+        private static function progress_failures_map() {
+                return array(
+                        'los' => 'مشترک LOS می‌باشد (اینترنت و تلفن قطع می‌باشد)',
+                        'phone' => 'تلفن مشترک قطع می‌باشد',
+                        'internet' => 'اینترنت مشترک قطع می‌باشد',
+                        'other' => 'سایر',
+                );
+        }
+
+        /** متن خوانای داده‌های دایری یک ردیف — برای انتقال به «توضیحات متفرقه» */
+        private static function progress_text_of_row( $r ) {
+                $steps_map = self::progress_steps_map();
+                $fail_map  = self::progress_failures_map();
+
+                $steps = array();
+                $raw_steps = (string) ( $r['progress_steps'] ?? '' );
+                if ( '' !== $raw_steps ) {
+                        $dec = json_decode( $raw_steps, true );
+                        if ( is_array( $dec ) ) {
+                                foreach ( $dec as $k ) {
+                                        $k = (string) $k;
+                                        if ( isset( $steps_map[ $k ] ) ) {
+                                                $steps[] = $steps_map[ $k ];
+                                        }
+                                }
+                        }
+                }
+                $fails = array();
+                $raw_fails = (string) ( $r['progress_failures'] ?? '' );
+                if ( '' !== $raw_fails ) {
+                        $dec = json_decode( $raw_fails, true );
+                        if ( is_array( $dec ) ) {
+                                foreach ( $dec as $k ) {
+                                        $k = (string) $k;
+                                        if ( isset( $fail_map[ $k ] ) ) {
+                                                $fails[] = $fail_map[ $k ];
+                                        }
+                                }
+                        }
+                }
+                if ( empty( $fails ) && ! empty( $r['progress_failure'] ) ) {
+                        $k = (string) $r['progress_failure'];
+                        if ( isset( $fail_map[ $k ] ) ) {
+                                $fails[] = $fail_map[ $k ];
+                        }
+                }
+
+                $parts = array();
+                $done = (int) ( $r['progress_done'] ?? 0 );
+                $total = count( $steps_map );
+                if ( $done > 0 || $steps ) {
+                        $line = '🔹 «پیشرفت دایری (سامانه قدیمی — حذف‌شده در نسخه ۲.۰.۱)»: ' . $done . ' از ' . $total . ' مرحله';
+                        if ( $steps ) {
+                                $line .= ' — ' . implode( '، ', $steps );
+                        }
+                        $parts[] = $line;
+                }
+                if ( $fails ) {
+                        $parts[] = '🔹 «خرابی اعلام‌شده (سامانه قدیمی)»: ' . implode( '، ', $fails );
+                }
+                return implode( "\n", $parts );
+        }
+
+        /**
          * «بروزآوری دیتابیس» (۱.۲۱.۰ — درخواست کاربر):
          *  ۱) ستون‌های یتیم هر دو جدول services/addresses پیدا می‌شوند
          *  ۲) محتوای غیرخالی هر ستون به‌صورت قالب‌بندی‌شده به «توضیحات متفرقه» همان سرویس اضافه می‌شود
@@ -641,6 +830,12 @@ class TPP_Fields {
                 if ( ! $st ) {
                         return $report;
                 }
+
+                // ۲.۰.۱ — پاک‌سازی اختصاصی داده‌های «پیشرفت دایری» حذف‌شده (متن خوانا → توضیحات متفرقه + حذف ستون‌ها)
+                $progress_report = self::progress_cleanup();
+                $report['progress_cleanup'] = $progress_report;
+                $report['services_updated'] += (int) ( $progress_report['services_updated'] ?? 0 );
+                $report['dropped'] = array_merge( $report['dropped'], (array) ( $progress_report['dropped'] ?? array() ) );
 
                 // فیلد مقصد — اگر به هر دلیلی موجود نیست بساز (seed آن در ارتقا انجام شده)
                 if ( ! self::get( 'f_misc_notes' ) ) {

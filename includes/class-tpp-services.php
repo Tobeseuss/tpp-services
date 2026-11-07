@@ -317,29 +317,7 @@ class TPP_Services {
                 foreach ( $cat_data as $col => $val ) {
                         $insert[ $col ] = $val;
                 }
-                // ۱.۱۲.۰/۱.۱۳.۰/۱.۱۴.۰ — پیشرفت دایری سرویس (۱۶ مرحله + خرابی‌های چندتایی + منطق آبشاری مراحل وابسته)
-                $progress_changes = array();
-                if ( array_key_exists( 'progress', $data ) && is_array( $data['progress'] ) ) {
-                        $prog = TPP_Progress::apply( $data['progress'], null );
-                        $insert['progress_steps']      = $prog['steps'];
-                        $insert['progress_done']       = $prog['done'];
-                        $insert['progress_failures']   = $prog['failures']; // ۱.۱۴.۰ — آرایه خرابی‌ها
-                        $insert['progress_failure']    = $prog['failure'];  // اولین خرابی (سازگاری)
-                        $insert['progress_excluded']   = $prog['excluded'];
-                        $insert['progress_updated_at'] = $now;
-                        if ( $prog['done'] > 0 ) {
-                                $progress_changes['_progress_steps'] = array(
-                                        'old' => null,
-                                        'new' => '+' . $prog['done'] . ' مرحله: ' . implode( '، ', array_map( array( 'TPP_Progress', 'step_label' ), $prog['steps_array'] ) ),
-                                );
-                        }
-                        if ( ! empty( $prog['failures_array'] ) ) {
-                                $progress_changes['_progress_failure'] = array(
-                                        'old' => null,
-                                        'new' => TPP_Progress::failures_labels_text( $prog['failures_array'] ), // ۱.۱۴.۰ — چند خرابی
-                                );
-                        }
-                }
+                // ۲.۰.۱ — پیشرفت دایری حذف شد (داده قدیمی با «🧮 بروزآوری دیتابیس» پاک می‌شود)
                 $service_id = TPP_DB::insert( 'services', $insert );
                 if ( ! $service_id ) {
                         return new WP_Error( 'tpp_insert_failed', 'ثبت سرویس ناموفق بود.' );
@@ -351,13 +329,13 @@ class TPP_Services {
                 }
                 TPP_History::record( array(
                         'entity' => 'service', 'entity_id' => $service_id, 'address_id' => $address_id,
-                        'revision' => 1, 'user_id' => $user_id, 'action' => 'create', 'source' => $source, 'changes' => array_merge( $changes, $progress_changes, $cat_changes ),
+                        'revision' => 1, 'user_id' => $user_id, 'action' => 'create', 'source' => $source, 'changes' => array_merge( $changes, $cat_changes ),
                         'addr_changes' => $addr_event ? $addr_event['changes'] : null,
                         'addr_action'  => $addr_event ? $addr_event['action'] : null,
                 ) );
 
                 // ۱.۲۰.۰ — سجل بازبینی اقدامات نصاب‌ها (کاربران غیرمدیر)
-                TPP_Review::track_create( $service_id, $user_id, $source, array_merge( $changes, $progress_changes, $cat_changes ) );
+                TPP_Review::track_create( $service_id, $user_id, $source, array_merge( $changes, $cat_changes ) );
 
                 $result = array( 'status' => 'created', 'id' => (int) $service_id, 'address_id' => (int) $address_id, 'version' => 1 );
                 if ( ! empty( $args['op_id'] ) ) {
@@ -486,42 +464,7 @@ class TPP_Services {
                         $changes[ $k ] = $ch;
                 }
 
-                // ۱.۱۲.۰/۱.۱۳.۰/۱.۱۴.۰ — پیشرفت دایری: فیلد progress اگر ارسال شده باشد با مقدار فعلی مقایسه و ثبت می‌شود
-                // (فقط کاربرانی که اجازه ویرایش دارند می‌توانند تغییرش بدهند — همان قید سایر فیلدها)
-                // ۱.۱۳.۰ — منطق آبشاری: تیک مرحله N همه مراحل قبل را خودکار تیک می‌زند (مگر ردشده‌ها)
-                // ۱.۱۴.۰ — خرابی‌ها آرایه‌اند و می‌توان چند خرابی را همزمان اعلام کرد
-                $progress_changed = false;
-                if ( array_key_exists( 'progress', $data ) && is_array( $data['progress'] ) ) {
-                        $prog       = TPP_Progress::apply( $data['progress'], $service );
-                        $old        = TPP_Progress::steps_of( $service );
-                        $new        = $prog['steps_array'];
-                        $old_excl   = TPP_Progress::excluded_of( $service );
-                        $new_excl   = $prog['excluded_array'];
-                        $old_fails  = TPP_Progress::failures_of( $service );
-                        $new_fails  = $prog['failures_array'];
-                        if ( $old !== $new || $old_excl !== $new_excl ) {
-                                $text = TPP_Progress::steps_change_text( $old, $new, $old_excl, $new_excl );
-                                if ( '' !== $text ) {
-                                        $changes['_progress_steps'] = array( 'old' => $old ? count( $old ) . ' مرحله' : null, 'new' => $text );
-                                }
-                                $sdata['progress_steps']      = $prog['steps'];
-                                $sdata['progress_done']       = $prog['done'];
-                                $sdata['progress_excluded']   = $prog['excluded'];
-                                $progress_changed = true;
-                        }
-                        if ( $old_fails !== $new_fails ) {
-                                $changes['_progress_failure'] = array(
-                                        'old' => $old_fails ? TPP_Progress::failures_labels_text( $old_fails ) : null,
-                                        'new' => $new_fails ? TPP_Progress::failures_labels_text( $new_fails ) : 'حل شد / حذف خرابی',
-                                );
-                                $sdata['progress_failures'] = $prog['failures']; // ۱.۱۴.۰ — JSON آرایه
-                                $sdata['progress_failure']  = $prog['failure'];  // اولین خرابی (سازگاری)
-                                $progress_changed = true;
-                        }
-                        if ( $progress_changed ) {
-                                $sdata['progress_updated_at'] = TPP_Date::now();
-                        }
-                }
+                // ۲.۰.۱ — پیشرفت دایری حذف شد؛ کلید progress اگر ارسال شود نادیده گرفته می‌شود
 
                 if ( empty( $sdata ) && ! $address_changed ) {
                         $result = array( 'status' => 'nochange', 'id' => (int) $id, 'version' => (int) $service['version'] );
@@ -615,20 +558,18 @@ class TPP_Services {
         }
 
         /**
-         * ۱.۱۳.۰ — تغییر گروهی/تکی «پیشرفت دایری + خرابی + فیلدهای سرویس» روی چند سرویس.
+         * ۲.۰.۱ — تغییر گروهی/تکی فیلدهای سرویس روی چند سرویس.
+         * (نسخه‌های ۱.۱۲ تا ۱.۳۲ «پیشرفت دایری» را هم تغییر می‌دادند — با حذف کامل دایری،
+         *  این متد فقط فیلدهای سرویس را تغییر می‌دهد؛ مثلاً «آخرین وضعیت اینترنت/تلفن».)
          *
          * $opts:
-         *   mode           => '' (بدون تغییر) | 'up_to' (تنظیم تا مرحله) | 'add' | 'remove' | 'clear'
-         *   step           => کلید مرحله برای up_to (یا 'all' = همه ۱۶ مرحله)
-         *   steps          => آرایه کلیدها برای add/remove
-         *   skipped_policy => 'keep' (پیش‌فرض — مراحل ردشده توسط کاربر حفظ و پرش می‌شوند) | 'reset'
-         *   failure        => null (بدون تغییر) | '' (رفع خرابی) | los|phone|internet|other
-         *   service        => array(slug => value) — فیلدهای سرویس (مثل آخرین وضعیت اینترنت/تلفن)
+         *   service        => array(slug => value) — فیلدهای سرویس (الزامی)
          *   dry_run        => فقط محاسبه؛ ذخیره نمی‌شود
          * $args: user_id, source ('bulk'|'offline'), op_id
          *
          * هر سرویس تغییرکرده: به‌روزرسانی + رکورد تاریخچه (action=update, source=bulk) با علامت
-         * «تغییر گروهی» — در گزارش فعالیت‌ها همان قالب ویرایش پیشرفت دایری دیده می‌شود.
+         * «تغییر گروهی» — در گزارش فعالیت‌ها همان قالب ویرایش گروهی دیده می‌شود.
+         * کلیدهای progress/mode/step/failures قدیمی نادیده گرفته می‌شوند (سازگاری با صف آفلاین قدیمی).
          */
         public function apply_bulk( array $ids, array $opts, $args = array() ) {
                 $user_id = (int) ( $args['user_id'] ?? get_current_user_id() );
@@ -648,39 +589,7 @@ class TPP_Services {
                         }
                 }
 
-                // ---- اعتبارسنجی گزینه‌ها ----
-                $mode = sanitize_key( (string) ( $opts['mode'] ?? '' ) );
-                if ( ! in_array( $mode, array( '', 'up_to', 'add', 'remove', 'clear' ), true ) ) {
-                        return new WP_Error( 'tpp_bad_bulk_mode', 'نوع عملیات گروهی نامعتبر است.' );
-                }
-                $step  = sanitize_key( (string) ( $opts['step'] ?? '' ) );
-                $steps = array();
-                foreach ( (array) ( $opts['steps'] ?? array() ) as $s ) {
-                        $s = sanitize_key( (string) $s );
-                        if ( array_key_exists( $s, TPP_Progress::steps() ) ) {
-                                $steps[] = $s;
-                        }
-                }
-                if ( 'up_to' === $mode && 'all' !== $step && ! array_key_exists( $step, TPP_Progress::steps() ) ) {
-                        return new WP_Error( 'tpp_bad_bulk_step', 'مرحله دایری نامعتبر است.' );
-                }
-                if ( ( 'add' === $mode || 'remove' === $mode ) && empty( $steps ) ) {
-                        return new WP_Error( 'tpp_bad_bulk_steps', 'فهرست مراحل خالی است.' );
-                }
-                $reset_skips = ( 'reset' === sanitize_key( (string) ( $opts['skipped_policy'] ?? 'keep' ) ) );
-                // ۱.۱۴.۰ — خرابی‌ها آرایه‌اند: failures (چندتایی) یا failure (legacy تکی)؛ null = بدون تغییر
-                $failures = null;
-                if ( array_key_exists( 'failures', $opts ) && null !== $opts['failures'] ) {
-                        $failures = TPP_Progress::parse_failure_list( $opts['failures'] );
-                } elseif ( array_key_exists( 'failure', $opts ) && null !== $opts['failure'] ) {
-                        $one = sanitize_key( (string) $opts['failure'] );
-                        if ( '' !== $one && ! array_key_exists( $one, TPP_Progress::failures() ) ) {
-                                return new WP_Error( 'tpp_bad_bulk_failure', 'وضعیت خرابی نامعتبر است.' );
-                        }
-                        $failures = '' === $one ? array() : array( $one );
-                }
-
-                // ---- فیلدهای سرویس (اختیاری) — فقط فیلدهای قابل مشاهده کاربر ----
+                // ---- فیلدهای سرویس (الزامی) — فقط فیلدهای قابل مشاهده کاربر ----
                 $svc_values = array();
                 if ( ! empty( $opts['service'] ) && is_array( $opts['service'] ) ) {
                         $visible = TPP_Capabilities::visible_fields( $user_id );
@@ -694,8 +603,10 @@ class TPP_Services {
                                 return new WP_Error( 'tpp_bad_bulk_fields', 'فیلد سرویس ارسالی معتبر یا قابل مشاهده نیست.' );
                         }
                 }
+                if ( empty( $svc_values ) ) {
+                        return new WP_Error( 'tpp_no_ops', 'هیچ فیلدی برای تغییر گروهی مشخص نشده است.' );
+                }
 
-                $keys = TPP_Progress::step_keys();
                 $results = array();
                 $summary = array( 'total' => 0, 'applied' => 0, 'unchanged' => 0, 'not_found' => 0, 'error' => 0 );
 
@@ -718,46 +629,6 @@ class TPP_Services {
                                 continue;
                         }
 
-                        // ---- محاسبه پیشرفت جدید بر اساس mode ----
-                        $cur   = TPP_Progress::steps_of( $service );
-                        $cur_e = TPP_Progress::excluded_of( $service );
-                        $input = array( 'skipped' => array(), 'reset_skips' => false );
-                        switch ( $mode ) {
-                                case 'up_to':
-                                        $input['steps'] = ( 'all' === $step ) ? $keys : array_slice( $keys, 0, array_search( $step, $keys, true ) + 1 );
-                                        $input['reset_skips'] = $reset_skips;
-                                        $input['skipped'] = $reset_skips ? array() : $cur_e;
-                                        // ۱.۱۳.۰ — با سیاست keep: مراحل ردشده از فهرست هدف حذف می‌شوند تا
-                                        // در apply() به‌عنوان «تیک دوباره توسط کاربر» تلقی نشوند و ردشده بمانند
-                                        if ( ! $reset_skips && ! empty( $cur_e ) ) {
-                                                $input['steps'] = array_values( array_diff( $input['steps'], $cur_e ) );
-                                        }
-                                        break;
-                                case 'add':
-                                        $input['steps'] = array_values( array_unique( array_merge( $cur, $steps ) ) );
-                                        $input['skipped'] = $reset_skips ? array() : array_diff( $cur_e, $input['steps'] );
-                                        break;
-                                case 'remove':
-                                        $input['steps'] = array_values( array_diff( $cur, $steps ) );
-                                        $input['skipped'] = $reset_skips ? array() : $cur_e;
-                                        break;
-                                case 'clear':
-                                        $input['steps'] = array();
-                                        $input['skipped'] = array();
-                                        $input['reset_skips'] = true; // پاک‌کردن پیشرفت = شروع تازه
-                                        break;
-                                default:
-                                        $input['steps'] = $cur; // بدون تغییر پیشرفت — فقط خرابی/فیلدها
-                                        $input['skipped'] = $cur_e;
-                        }
-                        if ( null !== $failures ) {
-                                $input['failures'] = $failures; // ۱.۱۴.۰ — فهرست جدید خرابی‌ها (آرایه خالی = رفع همه)
-                        } else {
-                                $input['failures'] = TPP_Progress::failures_of( $service ); // بدون تغییر
-                        }
-
-                        $prog = TPP_Progress::apply( $input, $service );
-
                         // ---- تغییر فیلدهای سرویس ----
                         $changes = array();
                         $sdata   = array();
@@ -768,53 +639,13 @@ class TPP_Services {
                                 }
                         }
 
-                        // ---- تغییر پیشرفت/خرابی ----
-                        $new      = $prog['steps_array'];
-                        $new_excl = $prog['excluded_array'];
-                        $old_fails = TPP_Progress::failures_of( $service );
-                        $new_fails = $prog['failures_array'];
-                        $progress_changed = false;
-                        if ( $cur !== $new || $cur_e !== $new_excl ) {
-                                $text = TPP_Progress::steps_change_text( $cur, $new, $cur_e, $new_excl );
-                                if ( '' !== $text ) {
-                                        $changes['_progress_steps'] = array( 'old' => $cur ? count( $cur ) . ' مرحله' : null, 'new' => $text );
-                                }
-                                $sdata['progress_steps']    = $prog['steps'];
-                                $sdata['progress_done']     = $prog['done'];
-                                $sdata['progress_excluded'] = $prog['excluded'];
-                                $progress_changed = true;
-                        }
-                        if ( $old_fails !== $new_fails ) {
-                                $changes['_progress_failure'] = array(
-                                        'old' => $old_fails ? TPP_Progress::failures_labels_text( $old_fails ) : null,
-                                        'new' => $new_fails ? TPP_Progress::failures_labels_text( $new_fails ) : 'حل شد / حذف خرابی',
-                                );
-                                $sdata['progress_failures'] = $prog['failures']; // ۱.۱۴.۰ — JSON آرایه
-                                $sdata['progress_failure']  = $prog['failure'];  // اولین خرابی (سازگاری)
-                                $progress_changed = true;
-                        }
-
                         if ( empty( $changes ) ) {
                                 $summary['unchanged']++;
-                                $results[] = array(
-                                        'id' => $id, 'status' => 'unchanged',
-                                        'progress' => TPP_Progress::summary( $service ),
-                                );
+                                $results[] = array( 'id' => $id, 'status' => 'unchanged' );
                                 continue;
                         }
 
-                        $entry = array(
-                                'id' => $id, 'status' => 'applied',
-                                'progress' => TPP_Progress::summary(
-                                        array_merge( is_array( $service ) ? $service : array(), array(
-                                                'progress_steps' => $prog['steps'],
-                                                'progress_done'  => $prog['done'],
-                                                'progress_failures' => $prog['failures'],
-                                                'progress_failure' => $prog['failure'],
-                                                'progress_excluded' => $prog['excluded'],
-                                        ) )
-                                ),
-                        );
+                        $entry = array( 'id' => $id, 'status' => 'applied' );
 
                         if ( $dry_run ) {
                                 $entry['dry_run'] = true;
@@ -824,16 +655,13 @@ class TPP_Services {
                                 continue;
                         }
 
-                        if ( $progress_changed ) {
-                                $sdata['progress_updated_at'] = TPP_Date::now();
-                        }
                         $new_version = (int) $service['version'] + 1;
                         $sdata['updated_at'] = TPP_Date::now();
                         $sdata['version']    = $new_version;
                         TPP_DB::update( 'services', $sdata, array( 'id' => $id ) );
 
                         // علامت «تغییر گروهی» برای گزارش فعالیت‌ها
-                        $changes['_bulk_edit'] = array( 'old' => null, 'new' => 'تغییر گروهی پیشرفت/وضعیت' );
+                        $changes['_bulk_edit'] = array( 'old' => null, 'new' => 'تغییر گروهی وضعیت' );
                         TPP_History::record( array(
                                 'entity' => 'service', 'entity_id' => $id, 'address_id' => (int) $service['address_id'],
                                 'revision' => $new_version, 'user_id' => $user_id,
@@ -927,18 +755,7 @@ class TPP_Services {
                         $params[] = $upd[1];
                 }
 
-                // ۱.۱۲.۰ — فیلتر وضعیت پیشرفت دایری (none|progress|done|fail|fail_los|…)
-                $psw = TPP_Progress::status_where( (string) ( $args['progress_status'] ?? '' ), 's' );
-                if ( $psw ) {
-                        $where   .= $psw[0];
-                        $params   = array_merge( $params, $psw[1] );
-                }
-                // ۱.۱۲.۰ — فیلتر مرحله خاص دایری (انجام‌شده/انجام‌نشده)
-                $stw = TPP_Progress::step_where( (string) ( $args['progress_step'] ?? '' ), (string) ( $args['progress_step_state'] ?? '' ), 's' );
-                if ( $stw ) {
-                        $where   .= $stw[0];
-                        $params   = array_merge( $params, $stw[1] );
-                }
+                // ۲.۰.۱ — فیلترهای وضعیت دایری حذف شدند
 
                 // ۱.۱۹.۰ — فیلتر دسته‌بندی/تگ (دسته = دقیق؛ تگ‌ها = هرکدام)
                 $cw = TPP_Categories::filter_where( $args, 's' );
@@ -1122,8 +939,7 @@ class TPP_Services {
                                 $out[ $slug ] = (string) ( $row[ $slug ] ?? '' );
                         }
                 }
-                // ۱.۱۲.۰ — خلاصه پیشرفت دایری (مراحل + خرابی + درصد) برای همه کاربران
-                $out['progress'] = TPP_Progress::summary( $row );
+                // ۲.۰.۱ — خلاصه پیشرفت دایری حذف شد
                 // ۱.۱۹.۰ — دسته‌بندی/تگ سرویس (داده سیستمی — تابع دسترسی فیلد نیست)
                 $out = array_merge( $out, TPP_Categories::shape( $row ) );
                 return $out;
@@ -1157,8 +973,7 @@ class TPP_Services {
                         'today'      => (int) TPP_DB::get_var( "SELECT COUNT(*) FROM " . TPP_DB::table( 'history' ) . " WHERE DATE(changed_at) = %s", array( TPP_Date::today() ) ),
                         'conflicts'  => (int) TPP_DB::get_var( "SELECT COUNT(*) FROM " . TPP_DB::table( 'history' ) . " WHERE is_conflict = 1" ),
                         'last_change'=> TPP_DB::get_var( "SELECT changed_at FROM " . TPP_DB::table( 'history' ) . " ORDER BY id DESC LIMIT 1" ),
-                        // ۱.۱۲.۰ — آمار پیشرفت دایری برای داشبورد
-                        'progress'   => TPP_Progress::stats(),
+                        // ۲.۰.۱ — آمار پیشرفت دایری حذف شد
                 );
         }
 

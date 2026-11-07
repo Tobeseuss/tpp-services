@@ -1084,113 +1084,26 @@ html.tpp-embed .login-screen { min-height: 60vh; }
 }
 [data-theme="light"] .act-stat { background: color-mix(in srgb, #ffffff 65%, var(--border)); }
 
-/* ==================== ۱.۱۲.۰ — پیشرفت دایری سرویس ==================== */
-/* کارت پیشرفت دایری — بالای «اطلاعات اصلی» فرم/نمای سرویس */
-.prog-card { border-top: 3px solid var(--accent); }
-.prog-card.has-failure { border-top-color: var(--danger); }
-.prog-card.has-failure .prog-fail { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 7%, transparent); }
+/* ==================== ۲.۰.۱ — استایل‌های «پیشرفت دایری سرویس» حذف شدند ====================
+   (.prog-card/.prog-bar/.prog-steps/.prog-fail/.svc-prog-badge/.prog-dash/.bstep-chip/…)
+   فیلتر دسته‌بندی (prog-filter/pf-label) و نوار پیشرفت آپلود بازیابی (.progress/.progress-bar) حفظ شدند. */
 
-.prog-summary { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 4px 0 10px; }
-.prog-bar { flex: 1 1 220px; min-width: 180px; height: 14px; border-radius: 999px; background: color-mix(in srgb, var(--bg) 72%, var(--border)); border: 1px solid var(--border); overflow: hidden; direction: ltr; }
-.prog-fill { height: 100%; width: 0; border-radius: 999px; background: linear-gradient(90deg, var(--accent), #7ee0b8); transition: width .35s ease; }
-.prog-fill.full { background: linear-gradient(90deg, var(--accent), var(--warning)); }
-.prog-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.prog-count { font-size: 13px; color: var(--text-soft); white-space: nowrap; }
-
-/* فهرست ۱۶ مرحله — گرید واکنش‌گرا */
-.prog-steps { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 10px; margin-top: 4px; }
-.prog-step { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; line-height: 1.7; transition: border-color .15s, background .15s; }
-.prog-step:hover { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 6%, transparent); }
-.prog-step input { position: absolute; opacity: 0; width: 1px; height: 1px; }
-.prog-step-box { flex-shrink: 0; width: 20px; height: 20px; border-radius: 6px; border: 2px solid var(--border-strong); display: inline-flex; align-items: center; justify-content: center; font-size: 13px; color: #fff; transition: all .15s; }
-.prog-step.done { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); background: color-mix(in srgb, var(--accent) 9%, transparent); }
-.prog-step.done .prog-step-box { background: var(--accent); border-color: var(--accent); }
-.prog-step.done .prog-step-box::after { content: "✓"; }
-.prog-step.done .prog-step-label { color: var(--text); }
-.prog-step-label { font-size: 13px; color: var(--text-soft); }
-.prog-step:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px var(--focus-ring); }
-
-/* بخش اعلام خرابی */
-.prog-fail { margin-top: 12px; border: 1px dashed var(--border-strong); border-radius: 12px; padding: 10px 12px; }
-.prog-fail-head { font-size: 13.5px; font-weight: 700; color: var(--danger); margin-bottom: 8px; }
-.prog-fail-head .muted { font-weight: 400; font-size: 11.5px; }
-.prog-fail-opts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 10px; }
-.prog-fail-opt { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; line-height: 1.7; }
-.prog-fail-opt input { position: absolute; opacity: 0; width: 1px; height: 1px; }
-.prog-fail-opt.on { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
-.prog-fail-opt.on .prog-step-box { background: var(--danger); border-color: var(--danger); }
-.prog-fail-opt.on .prog-step-box::after { content: "!"; font-weight: 900; }
-.prog-fail-opt:focus-within { border-color: var(--danger); box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 22%, transparent); }
-.prog-desc { display: none; margin-top: 10px; }
-.prog-desc.show { display: block; }
-.prog-desc .field { margin: 0; }
-
-/* برجسته‌سازی هنگام بازگشت از پرسش قبل از ذخیره */
-@keyframes progFlash {
-        0%, 100% { box-shadow: none; }
-        25%, 75% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 45%, transparent); }
-}
-.prog-card.prog-flash { animation: progFlash 1.6s ease 2; }
-
-/* نشان وضعیت دایری روی کارت‌های فهرست سرویس‌ها */
-.svc-prog-badge { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.svc-card.has-failure { border-color: color-mix(in srgb, var(--danger) 55%, var(--border)); }
-.svc-card.has-failure .svc-card-head { background: color-mix(in srgb, var(--danger) 8%, transparent); }
-.svc-prog-badge.fail { animation: none; }
+/* سربرگ کارت سرویس — چند چیپ در یک ردیف شکستنی */
 .svc-card-head { flex-wrap: wrap; gap: 6px; }
 
-/* فیلتر وضعیت دایری در پنل فیلترها */
+/* فیلتر دسته‌بندی/تگ در پنل فیلترها (کلاس مشترک پنل فیلتر) */
 .prog-filter { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 2px 10px; border-bottom: 1px dashed var(--border); margin-bottom: 8px; }
 .prog-filter .pf-label { font-size: 12.5px; color: var(--text-soft); white-space: nowrap; }
-/* ۱.۱۳.۲: سقف عرض — نام مراحل دایری بلند است و عرض ذاتی سلکت تا ~۵۳۰px می‌رود؛
- * بدون max-width در موبایل از کادر فیلترها بیرون می‌زد و صفحه را لغزان می‌کرد. */
 .prog-filter select.btn { min-width: 170px; max-width: 100%; flex: 1 1 170px; }
 .prog-filter .checkbox-row { margin: 0; font-size: 12.5px; white-space: nowrap; }
-/* ۱.۱۳.۲: ردیف «مرحله» — قبلاً span با محتوای درون‌خطی بود که کل ردیف
- * (برچسب + سلکت + دو رادیو) را در یک خط ~۵۳۰pxی می‌چید و در موبایل سرریز می‌شد؛
- * حالا خودش ردیفِ شکستنی است و اجزایش در چند خط می‌نشینند. */
-#prog-step-wrap { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-basis: 100%; max-width: 100%; }
-#prog-step-wrap select { flex: 1 1 160px; max-width: 100%; }
 
-/* داشبورد — کادرهای وضعیت دایری */
-.prog-dash { margin-top: 14px; }
-.prog-stat-grid .stat { cursor: pointer; transition: transform .15s, border-color .15s; }
-.prog-stat-grid .stat:hover { transform: translateY(-2px); border-color: var(--primary); }
 .stat.err { border-right-color: var(--danger); }
 
-/* تم روشن */
-[data-theme="light"] .prog-step.done { background: #e2f6ee; }
-[data-theme="light"] .prog-fail-opt.on { background: #fde9e6; }
-[data-theme="light"] .prog-bar { background: #e5eaf2; }
-[data-theme="light"] .svc-card.has-failure .svc-card-head { background: #fde9e6; }
-
-/* موبایل */
-@media (max-width: 640px) {
-        .prog-steps { grid-template-columns: 1fr; }
-        .prog-fail-opts { grid-template-columns: 1fr; }
-        .prog-summary { gap: 8px; }
-        .prog-meta { flex-basis: 100%; justify-content: space-between; }
-        .svc-prog-badge { max-width: 100%; }
-}
-
-/* ==================== ۱.۱۳.۰ — مودال تغییر گروهی/تکی پیشرفت و وضعیت ==================== */
-.radio-row { display: flex; align-items: center; gap: 8px; font-size: 13.5px; min-height: 38px; cursor: pointer; }
-.radio-row input { width: 18px; height: 18px; accent-color: var(--primary-strong); flex-shrink: 0; }
-.radio-row:hover { color: var(--primary); }
+/* ==================== ۲.۰.۱ — مودال تغییر گروهی/تکی فیلدهای سرویس ==================== */
 
 .bulk-edit-body { max-height: min(64vh, 620px); overflow-y: auto; padding-left: 4px; padding-right: 4px; }
-.bulk-cur { margin: 2px 0 12px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; background: color-mix(in srgb, var(--primary) 5%, transparent); font-size: 13px; line-height: 2; }
 .bulk-section { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; background: color-mix(in srgb, var(--bg) 60%, transparent); }
 .bulk-sec-title { font-size: 13.5px; font-weight: 700; margin-bottom: 6px; color: var(--text); }
-.bulk-sub { margin: 4px 2px 8px 26px; }
-.bulk-sub select.btn { max-width: 100%; }
-.bulk-sub .hint { font-size: 11.5px; color: var(--text-soft); line-height: 1.9; margin-top: 6px; }
-
-.bstep-chips { display: flex; flex-wrap: wrap; gap: 6px; direction: rtl; }
-.bstep-chip { min-width: 40px; height: 34px; padding: 0 8px; border-radius: 9px; border: 1px solid var(--border-strong); background: var(--bg); color: var(--text-soft); font-size: 13.5px; font-weight: 600; cursor: pointer; transition: all .12s; }
-.bstep-chip:hover { border-color: var(--primary); color: var(--primary); }
-.bstep-chip.on { background: color-mix(in srgb, var(--accent) 18%, var(--bg)); border-color: var(--accent); color: var(--text); box-shadow: inset 0 0 0 1px var(--accent); }
-.bstep-chip.on::before { content: "✓ "; color: var(--accent); }
 
 .bulk-preview { border: 1px dashed var(--primary); border-radius: 12px; background: color-mix(in srgb, var(--primary) 6%, transparent); padding: 10px 12px; font-size: 13px; line-height: 2.1; }
 
@@ -1198,33 +1111,14 @@ html.tpp-embed .login-screen { min-height: 60vh; }
 
 /* تم روشن */
 [data-theme="light"] .bulk-section { background: #f6f8fc; }
-[data-theme="light"] .bstep-chip.on { background: #e2f6ee; }
 [data-theme="light"] .bulk-preview { background: #eef4fd; }
 
 /* موبایل */
 @media (max-width: 640px) {
         .bulk-edit-body { max-height: 58vh; }
-        .bulk-sub { margin-right: 2px; margin-left: 2px; }
-        .bstep-chip { min-width: 44px; height: 40px; }
-        .bulk-sub .hint { line-height: 1.7; }
 }
 
-/* ۱.۱۳.۰ — مرحله «ردشده توسط کاربر» در کارت پیشرفت (آبشار از آن می‌پرد) */
-.prog-step.skipped { border-style: dashed; border-color: var(--warning, #e6a23c); background: color-mix(in srgb, var(--warning, #e6a23c) 6%, transparent); }
-.prog-step.skipped .prog-step-box { border-color: var(--warning, #e6a23c); position: relative; }
-.prog-step.skipped .prog-step-box::after { content: "⤫"; background: none; color: var(--warning, #e6a23c); font-size: 14px; font-weight: 700; }
-.prog-step.skipped .prog-step-label { color: var(--text-soft); text-decoration: line-through solid transparent; }
-.prog-step.skipped:hover { border-color: var(--primary); }
-.prog-skip-note { font-size: 11.5px; color: var(--warning, #e6a23c); margin-top: 6px; }
-[data-theme="light"] .prog-step.skipped { background: #fdf3e4; }
-[data-theme="light"] .prog-step.skipped .prog-step-box::after { color: #b88230; }
-
-/* ==================== ۱.۱۴.۰ — گزارش کار + خرابی‌های چندتایی ==================== */
-
-/* چیدمان گزینه‌های خرابی در تغییر گروهی/تکی (چندانتخابی) */
-.bfail-opts { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
-.bfail-row { padding: 6px 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg); }
-.bfail-row.cur { border-color: color-mix(in srgb, #e05252 45%, var(--border)); background: color-mix(in srgb, #e05252 5%, var(--bg)); }
+/* ==================== ۱.۱۴.۰ — گزارش کار ==================== */
 
 /* اقلام گزارش کار */
 .wr-items { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
@@ -1343,7 +1237,6 @@ html.tpp-embed .login-screen { min-height: 60vh; }
 .wr-info-k { color: var(--muted, #9aa7b8); white-space: nowrap; flex: none; }
 .wr-info-v { color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wr-info-wide .wr-info-v { white-space: normal; word-break: break-word; }
-.wr-diary-chip { font-size: 12px; }
 @media (max-width: 640px) {
         .wr-act-detail { white-space: normal; flex-basis: 100%; order: 3; }
         .wr-svc-foot { flex-wrap: wrap; }

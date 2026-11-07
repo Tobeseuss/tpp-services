@@ -45,17 +45,13 @@ class TPP_Import {
                 );
         }
 
-        /** ۱.۱۳.۰ — شبه‌فیلدهای پیشرفت دایری/خرابی در ایمپورت (ستون‌های محاسباتی — فیلد واقعی نیستند) */
-        const PROGRESS_FIELD = '__progress';
-        const FAILURE_FIELD  = '__progress_failure';
+        /** ۲.۰.۱ — شبه‌فیلدهای پیشرفت دایری/خرابی از ایمپورت حذف شدند (ستون‌های اکسل قدیمی نادیده گرفته می‌شوند) */
         /** ۱.۱۹.۰ — شبه‌فیلدهای دسته‌بندی/تگ در ایمپورت (مقدار = برچسب‌ها؛ در ثبت به شناسه تبدیل می‌شود) */
         const CATEGORY_FIELD = '__category';
         const TAGS_FIELD     = '__tags';
 
         private function pseudo_aliases() {
                 return array(
-                        self::PROGRESS_FIELD => array( 'پیشرفت دایری', 'پيشرفت دايري', 'مراحل دایری', 'مرحله دایری', 'مراحل پیشرفت', 'پیشرفت سرویس', 'پیشرفت', 'progress', 'dayeri', 'دایری' ),
-                        self::FAILURE_FIELD => array( 'خرابی اعلام‌شده', 'خرابی اعلام شده', 'اعلام خرابی', 'وضعیت خرابی', 'خرابی سرویس', 'خرابی', 'failure' ),
                         /* ۱.۱۹.۰ — دسته‌بندی/تگ */
                         self::CATEGORY_FIELD => array( 'دسته‌بندی پروژه', 'دسته‌بندی', 'دسته بندی', 'دسته', 'category', 'پروژه' ),
                         self::TAGS_FIELD => array( 'تگ‌ها', 'تگها', 'تگ', 'برچسب‌ها', 'برچسب', 'tags', 'برچسب سرویس' ),
@@ -84,7 +80,7 @@ class TPP_Import {
                                 $alias[ $this->norm_header( $a ) ] = $slug;
                         }
                 }
-                // ۱.۱۳.۰ — شبه‌فیلدهای پیشرفت دایری/خرابی
+                // ۱.۱۹.۰ — شبه‌فیلدهای دسته/تگ (۲.۰.۱ — دایری حذف شد)
                 foreach ( $this->pseudo_aliases() as $pseudo => $list ) {
                         foreach ( $list as $a ) {
                                 $alias[ $this->norm_header( $a ) ] = $pseudo;
@@ -105,7 +101,7 @@ class TPP_Import {
                                 $mapping[ $col ] = $slug;
                                 $used[ $slug ]   = true;
                         } elseif ( '' !== $slug && $this->is_pseudo( $slug ) && empty( $pseudo_used[ $slug ] ) ) {
-                                $mapping[ $col ] = $slug; // ۱.۱۳.۰ — شبه‌فیلد دایری
+                                $mapping[ $col ] = $slug; // شبه‌فیلد دسته/تگ
                                 $pseudo_used[ $slug ] = true;
                         } else {
                                 $mapping[ $col ] = '';
@@ -114,9 +110,9 @@ class TPP_Import {
                 return $mapping;
         }
 
-        /** ۱.۱۳.۰ — آیا slug یک شبه‌فیلد پیشرفت است؟ (۱.۱۹.۰ — دسته/تگ هم) */
+        /** ۱.۱۹.۰ — آیا slug یک شبه‌فیلد است؟ (دسته/تگ — ۲.۰.۱: دایری حذف شد) */
         private function is_pseudo( $slug ) {
-                return in_array( $slug, array( self::PROGRESS_FIELD, self::FAILURE_FIELD, self::CATEGORY_FIELD, self::TAGS_FIELD ), true );
+                return in_array( $slug, array( self::CATEGORY_FIELD, self::TAGS_FIELD ), true );
         }
 
         /** نرمال‌سازی کلیدهای عددی (کد پستی/کد ملی): ارقام فارسی/عربی → لاتین + حذف فاصله و خط تیره */
@@ -154,11 +150,10 @@ class TPP_Import {
                 return 1 === preg_match( '/^0+$/', $v );
         }
 
-        /** ساخت داده‌های یک ردیف بر اساس نگاشت — [address_data, service_data, progress_data, tax_data] */
+        /** ساخت داده‌های یک ردیف بر اساس نگاشت — [address_data, service_data, tax_data] */
         private function split_row( $row, array $mapping, array $fields_by_slug ) {
                 $address_data = array();
                 $service_data = array();
-                $progress_data = array(); // ۱.۱۳.۰ — {steps, failure, skipped} از شبه‌ستون‌های دایری
                 $tax_data = array(); // ۱.۱۹.۰ — {category, tags} از شبه‌ستون‌های دسته/تگ (برچسب‌ها)
                 foreach ( $mapping as $col => $slug ) {
                         $val = isset( $row[ (int) $col ] ) ? trim( (string) $row[ (int) $col ] ) : '';
@@ -171,10 +166,6 @@ class TPP_Import {
                         }
                         if ( self::TAGS_FIELD === $slug ) {
                                 $tax_data['tags'] = $val; // برچسب تگ‌ها با جداکننده
-                                continue;
-                        }
-                        if ( $this->is_pseudo( $slug ) ) {
-                                $progress_data = array_merge( $progress_data, $this->parse_progress_cell( $slug, $val ) );
                                 continue;
                         }
                         if ( ! isset( $fields_by_slug[ $slug ] ) ) {
@@ -193,33 +184,7 @@ class TPP_Import {
                                 $service_data[ $mode_slug ] = $this->normalize_mode_value( $service_data[ $mode_slug ] );
                         }
                 }
-                return array( $address_data, $service_data, $progress_data, $tax_data );
-        }
-
-        /**
-         * ۱.۱۳.۰ — پارس مقدار سلول پیشرفت دایری/خرابی.
-         * مقدار مرحله: عدد ۱..۱۶ (فارسی/لاتین) | درصد | کلید مرحله | متن کامل برچسب | «کامل» | «هیچ» | فهرست با کاما
-         * مقدار خرابی: کلید یا برچسب — ۱.۱۴.۰: چند خرابی با جداساز کاما/؛ پشتیبانی می‌شود («قطع اینترنت، سایر»)
-         * خروجی: keys قابل افزودن به progress payload (steps/failures)
-         */
-        private function parse_progress_cell( $pseudo, $value ) {
-                $out = array();
-                $t = trim( (string) $value );
-                if ( '' === $t || '—' === $t || '-' === $t ) {
-                        return $out;
-                }
-                if ( self::FAILURE_FIELD === $pseudo ) {
-                        $fails = $this->parse_failures_value( $t );
-                        if ( null !== $fails ) {
-                                $out['failures'] = $fails; // ۱.۱۴.۰ — آرایه (خالی = رفع همه)
-                        }
-                        return $out;
-                }
-                $steps = $this->parse_steps_value( $t );
-                if ( null !== $steps ) {
-                        $out['steps'] = $steps;
-                }
-                return $out;
+                return array( $address_data, $service_data, $tax_data );
         }
 
         /** تبدیل ارقام فارسی/عربی به لاتین */
@@ -229,127 +194,6 @@ class TPP_Import {
                 return str_replace( $fa, $en, (string) $text );
         }
 
-        /** پارس مقدار مراحل — خروجی آرایه کلیدها یا null (نامعتبر) */
-        private function parse_steps_value( $t ) {
-                $keys = TPP_Progress::step_keys();
-                $total = count( $keys );
-                $norm = TPP_Services::normalize( strtolower( trim( $this->fa_digits_to_en( $t ) ) ) );
-                $norm = str_replace( array( '‌', 'ي' ), array( ' ', 'ی' ), (string) $norm );
-
-                // «کامل» / «همه» → هر ۱۶ مرحله
-                if ( in_array( trim( (string) $norm ), array( 'کامل', 'تمام', 'همه', 'کامل شده', 'تمام شده', 'all', 'complete', '100%', '100' ), true ) ) {
-                        return $keys;
-                }
-                // «هیچ» / «شروع نشده» → پاک‌کردن
-                if ( in_array( trim( (string) $norm ), array( 'هیچ', 'هیچکدام', 'هیچ یک', 'none', 'خالی', '0', 'شروع نشده', '-' ), true ) ) {
-                        return array();
-                }
-                // عدد خالی ۱..۱۶ یا درصد
-                if ( preg_match( '/^(\d{1,3})\s*%?$/u', trim( (string) $norm ), $m ) ) {
-                        $n = (int) $m[1];
-                        if ( 0 === $n ) {
-                                return array();
-                        }
-                        if ( $n > 100 ) {
-                                return null;
-                        }
-                        if ( false !== strpos( (string) $norm, '%' ) || $n > $total ) {
-                                $n = (int) round( $n * $total / 100 ); // درصد → تعداد مرحله
-                        }
-                        $n = max( 0, min( $total, $n ) );
-                        return array_slice( $keys, 0, $n );
-                }
-
-                // فهرست با کاما / خط عمودی: کلید یا برچسب هر مرحله
-                $parts = array_filter( array_map( 'trim', preg_split( '/[,،;؛|]/u', (string) $t ) ) );
-                $found = array();
-                $valid = true;
-                foreach ( $parts as $part ) {
-                        $key = $this->match_step( $part );
-                        if ( null === $key ) {
-                                $valid = false;
-                                break;
-                        }
-                        $found[ $key ] = true;
-                }
-                if ( ! $valid || empty( $found ) ) {
-                        // تک مقدار: تطبیق کلید یا برچسب
-                        $key = $this->match_step( trim( (string) $t ) );
-                        if ( null === $key ) {
-                                return null;
-                        }
-                        return array( $key );
-                }
-                // به‌ترتیب کانونی (آبشار روی سرور بر اساس بالاترین مرحله اعمال می‌شود)
-                return array_values( array_intersect( $keys, array_keys( $found ) ) );
-        }
-
-        /** تطبیق متن با کلید/برچسب یک مرحله — کلید یا null */
-        private function match_step( $text ) {
-                $t = TPP_Services::normalize( strtolower( trim( (string) $text ) ) );
-                $steps = TPP_Progress::steps();
-                if ( isset( $steps[ $t ] ) ) {
-                        return $t; // کلید مستقیم
-                }
-                foreach ( $steps as $key => $label ) {
-                    if ( TPP_Services::normalize( strtolower( $label ) ) === $t ) {
-                                return $key;
-                        }
-                }
-                // ۱.۱۳.۰ — تطبیق جزئی: «اینترنت متصل» = برچسب «اینترنت متصل می‌باشد»
-                // (حداقل ۴ نویسه تا تطبیق شانسی جلوگیری شود؛ اولین تطبیق کانونی برنده است)
-                if ( function_exists( 'mb_strlen' ) ? mb_strlen( $t, 'UTF-8' ) >= 4 : strlen( $t ) >= 8 ) {
-                        foreach ( $steps as $key => $label ) {
-                                $nl = TPP_Services::normalize( strtolower( $label ) );
-                                if ( false !== strpos( $nl, (string) $t ) ) {
-                                        return $key;
-                                }
-                        }
-                }
-                return null;
-        }
-
-        /** پارس مقدار خرابی — کلید معتبر یا '' (نامعتبر = null → بدون تغییر) */
-        private function parse_failure_value( $t ) {
-                $norm = TPP_Services::normalize( strtolower( trim( (string) $t ) ) );
-                $map = array(
-                        'los'        => array( 'los', 'ال او اس', 'قطع کامل', 'قطع کامل اینترنت و تلفن' ),
-                        'phone'      => array( 'phone', 'قطع تلفن', 'تلفن قطع', 'قطع شدن تلفن' ),
-                        'internet'   => array( 'internet', 'قطع اینترنت', 'اینترنت قطع', 'قطع شدن اینترنت' ),
-                        'other'      => array( 'other', 'سایر', 'سایر خرابی', 'خرابی دیگر', 'متن' ),
-                        ''           => array( 'رفع', 'رفع خرابی', 'حل', 'حل شد', 'سالم', 'بدون خرابی', 'نه', '-', '—', 'خالی', 'none' ),
-                );
-                foreach ( $map as $key => $labels ) {
-                        if ( in_array( (string) $norm, $labels, true ) ) {
-                                return $key;
-                        }
-                }
-                return null; // نامعتبر → بدون تغییر خرابی
-        }
-
-        /** ۱.۱۴.۰ — پارس چند خرابی با جداساز (کاما/؛/|) — خروجی آرایه کلیدها یا null (نامعتبر) */
-        private function parse_failures_value( $t ) {
-                $parts = array_filter( array_map( 'trim', preg_split( '/[,،;؛|]/u', (string) $t ) ) );
-                if ( empty( $parts ) ) {
-                        return null;
-                }
-                // حالت‌های ویژه تک‌مقداری که معنای «رفع همه» دارند
-                if ( 1 === count( $parts ) ) {
-                        $one = $this->parse_failure_value( $parts[0] );
-                        return ( null === $one ) ? null : ( '' === $one ? array() : array( $one ) );
-                }
-                $keys = array();
-                foreach ( $parts as $part ) {
-                        $one = $this->parse_failure_value( $part );
-                        if ( null === $one ) {
-                                return null; // بخشی نامعتبر بود → کل سلول نادیده
-                        }
-                        if ( '' !== $one ) {
-                                $keys[ $one ] = true;
-                        }
-                }
-                return array_keys( $keys );
-        }
 
         /**
          * نرمال‌سازی مقدار فیلدهای حالت‌دار (SBC / StandBy Proxy):
@@ -487,10 +331,8 @@ class TPP_Import {
                         'fields'           => array_values( $fields_by_slug ),
                         // ۱.۳۱.۰ — نام شیتی که داده‌ها از آن خوانده شد (برای نمایش در مرحله نگاشت)
                         'sheet_name'       => $sheet_used,
-                        // ۱.۱۳.۰ — شبه‌فیلدهای دایری برای مرحله نگاشت (computed — ستون فیلد واقعی نیستند)
+                        // ۱.۱۹.۰ — شبه‌فیلدهای نگاشت (computed — ستون فیلد واقعی نیستند) — ۲.۰.۱: دایری حذف شد
                         'pseudo_fields'    => array(
-                                array( 'slug' => self::PROGRESS_FIELD, 'label' => 'پیشرفت دایری (عدد ۱-۱۶، درصد، کلید یا برچسب مرحله، «کامل»/«هیچ»)' ),
-                                array( 'slug' => self::FAILURE_FIELD, 'label' => 'خرابی اعلام‌شده (LOS / قطع تلفن / قطع اینترنت / سایر / «رفع»)' ),
                                 /* ۱.۱۹.۰ — دسته‌بندی/تگ (مقدار = برچسب‌ها؛ ناموجود خودکار ساخته می‌شود) */
                                 array( 'slug' => self::CATEGORY_FIELD, 'label' => 'دسته‌بندی پروژه (نام دسته — مثل «پروژه سازمانی»)' ),
                                 array( 'slug' => self::TAGS_FIELD, 'label' => 'تگ‌ها (چند تگ با جداکننده کاما — مثل «ویژه، اولویت بالا»)' ),
@@ -511,7 +353,7 @@ class TPP_Import {
                 return ! $this->row_is_empty( is_array( $row ) ? $row : array() );
         }
 
-        /** ۱.۸.۰ — آیا حداقل یک ستون به فیلد موجود نگاشت شده است؟ (۱.۱۳.۰ — شبه‌فیلدهای دایری هم معتبرند) */
+        /** ۱.۸.۰ — آیا حداقل یک ستون به فیلد موجود نگاشت شده است؟ (شبه‌فیلدهای دسته/تگ هم معتبرند) */
         private function has_mapped_columns( array $mapping, array $fields_by_slug ) {
                 foreach ( $mapping as $col => $slug ) {
                         if ( '' !== $slug && ( isset( $fields_by_slug[ $slug ] ) || $this->is_pseudo( $slug ) ) ) {
@@ -669,8 +511,8 @@ class TPP_Import {
 
                 foreach ( $session['rows'] as $row ) {
                         $row_no++;
-                        list( $address_data, $service_data, $progress_data, $tax_data ) = $this->split_row( $row, $mapping, $fields_by_slug );
-                        if ( empty( $address_data ) && empty( $service_data ) && empty( $progress_data ) && empty( $tax_data ) ) {
+                        list( $address_data, $service_data, $tax_data ) = $this->split_row( $row, $mapping, $fields_by_slug );
+                        if ( empty( $address_data ) && empty( $service_data ) && empty( $tax_data ) ) {
                                 continue; // ردیف خالی
                         }
                         $m = $this->match_row( $address_data, $service_data, $idx );
@@ -770,8 +612,8 @@ class TPP_Import {
 
                 foreach ( $session['rows'] as $row ) {
                         $row_no++;
-                        list( $address_data, $service_data, $progress_data, $tax_data ) = $this->split_row( $row, $mapping, $fields_by_slug );
-                        if ( empty( $address_data ) && empty( $service_data ) && empty( $progress_data ) && empty( $tax_data ) ) {
+                        list( $address_data, $service_data, $tax_data ) = $this->split_row( $row, $mapping, $fields_by_slug );
+                        if ( empty( $address_data ) && empty( $service_data ) && empty( $tax_data ) ) {
                                 if ( $this->row_is_empty( is_array( $row ) ? $row : array() ) ) {
                                         $report['empty_rows']++;
                                         continue; // ردیف کاملاً خالی (بدون هیچ داده‌ای) — بی‌صدا رد می‌شود
@@ -831,9 +673,6 @@ class TPP_Import {
                                                 'service' => $service_data,
                                                 'address' => $address_data,
                                         );
-                                        if ( ! empty( $progress_data ) ) {
-                                                $update_payload['progress'] = $progress_data; // ۱.۱۳.۰ — دایری از اکسل
-                                        }
                                         if ( ! empty( $tax_data['category'] ) ) {
                                                 $update_payload['category'] = $tax_data['category']; // ۱.۱۹.۰
                                         }
@@ -860,11 +699,11 @@ class TPP_Import {
                                                 }
                                                 continue;
                                         }
-                                        // ۱.۱۳.۰ — ردیف فقط-دایری: بدون هیچ فیلد شناسایی، ثبت سرویس جدید بی‌معناست
+                                        // ۲.۰.۱ — ردیف فقط-دسته/تگ: بدون هیچ فیلد شناسایی، ثبت سرویس جدید بی‌معناست
                                         if ( empty( $address_data ) && empty( $service_data ) ) {
                                                 $report['skipped']++;
                                                 if ( count( $report['errors'] ) < 100 ) {
-                                                        $report['errors'][] = array( 'row' => $row_no, 'message' => 'این ردیف فقط داده پیشرفت دایری دارد — برای به‌روزرسانی دایری، یک فیلد شناسایی (مثل شماره تلفن) + «کلید تشخیص سرویس تکراری» + حالت به‌روزرسانی لازم است.' );
+                                                        $report['errors'][] = array( 'row' => $row_no, 'message' => 'این ردیف فیلد شناسایی ندارد — برای به‌روزرسانی، یک فیلد شناسایی (مثل شماره تلفن) + «کلید تشخیص سرویس تکراری» + حالت به‌روزرسانی لازم است.' );
                                                 }
                                                 continue;
                                         }
@@ -898,9 +737,6 @@ class TPP_Import {
                                                 'address' => $address_data,
                                                 'service' => $service_data,
                                         );
-                                        if ( ! empty( $progress_data ) ) {
-                                                $create_data['progress'] = $progress_data; // ۱.۱۳.۰ — دایری از اکسل
-                                        }
                                         if ( ! empty( $tax_data['category'] ) ) {
                                                 $create_data['category'] = $tax_data['category']; // ۱.۱۹.۰ — دسته از اکسل
                                         }

@@ -124,10 +124,7 @@ TPP.views = TPP.views || {};
 
         function queueRowHtml(r) {
                 const addr = [r.full_address, r.block, r.plate ? 'پلاک ' + r.plate : '', r.unit ? 'واحد ' + r.unit : ''].filter(Boolean).join('، ');
-                const prog = r.progress || {};
-                const progTxt = (prog.total && prog.done >= prog.total) ? '✅ دایری کامل'
-                        : (prog.done > 0 ? '🚧 تا مرحله (' + (prog.last_label || '—') + ')' : '⏳ شروع نشده');
-                const fails = (prog.failures_labels || []).join('، ');
+                // ۲.۰.۱ — نشان وضعیت دایری از ردیف صف حذف شد
                 return `
                 <div class="rev-row">
                         <div class="rev-row-main">
@@ -136,8 +133,6 @@ TPP.views = TPP.views || {};
                                 <span class="muted" style="white-space:nowrap">${fmtDate(r.updated_at || r.created_at)}</span>
                         </div>
                         <div class="rev-row-meta">
-                                <span class="chip">${progTxt}</span>
-                                ${fails ? '<span class="chip err">❌ ' + esc(fails) + '</span>' : ''}
                                 ${r.created_by ? '<span class="muted">ثبت: ' + esc(r.created_by) + ' — ' + fmtDate(r.created_at) + '</span>' : ''}
                                 <span style="flex:1"></span>
                                 <button class="btn btn-sm" data-open="${esc(String(r.id))}" title="مشاهده کامل سرویس">🛰️ سرویس</button>
@@ -146,11 +141,12 @@ TPP.views = TPP.views || {};
                 </div>`;
         }
 
-        /** مودال تعیین دسته/تگ سرویس ارجاعی */
+        /** مودال تعیین دسته/تگ سرویس ارجاعی — ۲.۰.۱:
+         *  ۱) پیشنهاد هوشمند: هنگام کلیک روی «تعیین دسته‌بندی»، کلمات «آدرس کامل / بلوک / خیابان»
+         *     در دسته‌های ثبت‌شده جستجو و بر اساس تعداد تطابق رتبه‌بندی می‌شوند (review/suggest)
+         *  ۲) انتخاب آجاکسی دسته: جستجو و پیشنهاد دسته با تایپ بخشی از عنوان (categories?kind&q) */
         function openAssign(row) {
                 const cats = st.cats || { categories: [], tags: [] };
-                const catOpts = (cats.categories || []).map((c) =>
-                        '<option value="' + esc(String(c.id)) + '"' + (c.is_review ? ' class="rev-opt-review"' : '') + '>' + esc(c.label) + (c.is_review ? ' (صف بازبینی)' : '') + '</option>').join('');
                 const tagChips = (cats.tags || []).map((t) =>
                         '<label class="chip tag-chip" data-tag="' + esc(String(t.id)) + '"><input type="checkbox"> ' + esc(t.label) + '</label>').join('');
 
@@ -158,22 +154,148 @@ TPP.views = TPP.views || {};
                         '<div class="modal-head"><h3>🛠 تعیین دسته‌بندی — سرویس #' + faNum(row.id) + '</h3><button class="modal-close" data-close>×</button></div>' +
                         '<div class="modal-body">' +
                         '<p class="muted">' + esc([row.full_address, row.block, row.plate ? 'پلاک ' + row.plate : '', row.unit ? 'واحد ' + row.unit : ''].filter(Boolean).join('، ') || 'بدون آدرس') + (row.virtual_number ? ' — شماره مجازی: ' + esc(row.virtual_number) : '') + (row.created_by ? ' — ثبت‌کننده: ' + esc(row.created_by) : '') + '</p>' +
-                        '<div class="field"><label>دسته‌بندی پروژه <span class="muted">(الزامی)</span></label>' +
-                        '<select id="ra-cat" class="btn"><option value="">— انتخاب دسته‌بندی —</option>' + catOpts + '</select>' +
+
+                        /* — پیشنهاد هوشمند دسته‌بندی (۲.۰.۱) — */
+                        '<div class="bulk-section" id="ra-suggest-box">' +
+                        '<div class="bulk-sec-title">🤖 پیشنهاد هوشمند دسته‌بندی</div>' +
+                        '<p class="muted" style="margin:2px 0 8px">کلمات «آدرس کامل»، «نام بلوک» و «نام خیابان» این سرویس در دسته‌بندی‌های ثبت‌شده جستجو شد — ترتیب پیشنهادها بر اساس تعداد تطابق‌هاست.</p>' +
+                        '<div id="ra-suggest" class="tag-chips"><span class="muted">در حال جستجوی دسته‌های مشابه…</span></div>' +
+                        '</div>' +
+
+                        '<div class="field"><label>دسته‌بندی پروژه <span class="muted">(الزامی — جستجوی آجاکسی: بخشی از عنوان را تایپ کنید)</span></label>' +
+                        '<div class="tpp-combo" id="ra-cat-combo">' +
+                        '<input type="text" class="combo-input" id="ra-cat-input" placeholder="تایپ کنید تا دسته‌بندی‌ها جستجو و پیشنهاد شوند…" autocomplete="off" role="combobox" aria-expanded="false">' +
+                        '<button type="button" class="combo-clear hidden" id="ra-cat-clear" tabindex="-1" title="حذف انتخاب">✕</button>' +
+                        '<div class="combo-list hidden" role="listbox"></div>' +
+                        '</div>' +
+                        '<input type="hidden" id="ra-cat" value="">' +
+                        '<div id="ra-cat-chip" class="tag-chips" style="margin-top:6px"></div>' +
                         '<div class="hint">دسته «ثبت جهت بازبینی و ویرایش یا تأیید مدیریت» یعنی سرویس همچنان در صف بازبینی بماند.</div></div>' +
                         '<div class="field"><label>تگ‌ها (اختیاری — چندتایی)</label><div class="tag-chips">' + (tagChips || '<span class="muted">تگی تعریف نشده است.</span>') + '</div></div>' +
                         '</div>' +
-                        '<div class="modal-foot"><button class="btn" data-close>انصراف</button><button class="btn btn-primary" id="ra-save">✅ ثبت و خروج از صف</button></div>',
+                        '<div class="modal-foot"><button class="btn" data-close>انصراف</button><button class="btn btn-primary" id="ra-save" disabled>✅ ثبت و خروج از صف</button></div>',
                         { static: true, wide: true }
                 );
 
                 const el = m.el;
+                const hidden = el.querySelector('#ra-cat');
+                const input = el.querySelector('#ra-cat-input');
+                const clearBtn = el.querySelector('#ra-cat-clear');
+                const chipBox = el.querySelector('#ra-cat-chip');
+                const list = el.querySelector('#ra-cat-combo .combo-list');
+                const saveBtn = el.querySelector('#ra-save');
+
+                /* ---- انتخاب/نمایش دسته انتخابی ---- */
+                const setSelected = (id, label) => {
+                        hidden.value = id ? String(id) : '';
+                        input.value = id ? (label || '') : input.value; // لیبل برای جستجوی بعدی می‌ماند
+                        clearBtn.classList.toggle('hidden', !id);
+                        chipBox.innerHTML = id ? '<span class="chip tag-chip on">🏷 ' + esc(label || ('#' + id)) + '</span>' : '';
+                        saveBtn.disabled = !id;
+                };
+
+                /* ---- ۱) پیشنهاد هوشمند — همان لحظه بازشدن مودال (کلیک «تعیین دسته‌بندی») ---- */
+                (async () => {
+                        const box = el.querySelector('#ra-suggest');
+                        try {
+                                const res = await TPP.api.request('GET', 'review/suggest', null, { service_id: parseInt(row.id, 10) });
+                                const items = (res && res.suggestions) || [];
+                                const words = (res && res.words) || [];
+                                if (!items.length) {
+                                        box.innerHTML = '<span class="muted">تطبیقی پیدا نشد' + (words.length ? ' — کلمات جستجوشده: ' + esc(words.join('، ')) : '') + ' — دسته را با جستجوی آجاکسی پایین انتخاب کنید.</span>';
+                                        return;
+                                }
+                                box.innerHTML = items.map((s) => {
+                                        const meta = 'تطبیق: ' + faNum(s.score) + ' — کلمات مشترک: ' + esc((s.matched || []).join('، ') || '—');
+                                        return '<button type="button" class="chip tag-chip ra-sug' + (s.is_review ? ' rev-opt-review' : '') + '" data-sid="' + esc(String(s.id)) + '" data-slabel="' + esc(s.label) + '" title="' + esc(meta) + '">🏷 ' + esc(s.label) + ' <b>(' + faNum(s.score) + ' تطبیق)</b></button>';
+                                }).join('') + '<div class="hint" style="flex-basis:100%">روی هر پیشنهاد کلیک کنید تا انتخاب شود — عدد داخل پرانتز = تعداد تطابق کلمات آدرس/بلوک/خیابان با عنوان دسته.</div>';
+                                box.querySelectorAll('.ra-sug').forEach((b) => b.addEventListener('click', () => {
+                                        setSelected(parseInt(b.getAttribute('data-sid'), 10) || 0, b.getAttribute('data-slabel') || '');
+                                        box.querySelectorAll('.ra-sug').forEach((x) => x.classList.toggle('on', x === b));
+                                }));
+                        } catch (e) {
+                                box.innerHTML = '<span class="muted">دریافت پیشنهادها ناموفق بود: ' + esc(e.message) + ' — دسته را با جستجوی آجاکسی پایین انتخاب کنید.</span>';
+                        }
+                })();
+
+                /* ---- ۲) انتخاب آجاکسی — جستجو و پیشنهاد با تایپ بخشی از نام دسته ---- */
+                let searchTimer = null;
+                let searchSeq = 0;
+                let open = false;
+                const norm = (s) => String(s == null ? '' : s).trim();
+
+                const fetchCats = async (q) => {
+                        if (TPP.offline.state().online) {
+                                try {
+                                        const params = { kind: 'category', per_page: 30 };
+                                        if (q) params.q = q;
+                                        const res = await TPP.api.request('GET', 'categories', null, params);
+                                        return (res && res.items) || [];
+                                } catch (e) { /* ادامه با کش محلی */ }
+                        }
+                        const src = (cats.categories || []);
+                        const qn = norm(q);
+                        return src.filter((c) => !qn || norm(c.label).indexOf(qn) !== -1).slice(0, 30);
+                };
+
+                const renderList = (items) => {
+                        if (!open) return;
+                        if (!items.length) {
+                                list.innerHTML = '<div class="combo-empty muted" style="padding:8px 12px">دسته‌ای با این عنوان یافت نشد.</div>';
+                        } else {
+                                list.innerHTML = items.map((c) =>
+                                        '<button type="button" class="combo-item' + (String(c.id) === hidden.value ? ' active' : '') + '" data-cid="' + esc(String(c.id)) + '" data-clabel="' + esc(c.label) + '" role="option">' + esc(c.label) + (c.is_review ? ' <span class="muted">(صف بازبینی)</span>' : '') + '</button>').join('');
+                                list.querySelectorAll('.combo-item').forEach((b) => b.addEventListener('click', () => {
+                                        setSelected(parseInt(b.getAttribute('data-cid'), 10) || 0, b.getAttribute('data-clabel') || '');
+                                        list.classList.add('hidden');
+                                        input.setAttribute('aria-expanded', 'false');
+                                        open = false;
+                                }));
+                        }
+                        list.classList.remove('hidden');
+                        input.setAttribute('aria-expanded', 'true');
+                };
+
+                const runSearch = async () => {
+                        const q = input.value.trim();
+                        const seq = ++searchSeq;
+                        const items = await fetchCats(q);
+                        if (seq !== searchSeq || !open || !document.contains(input)) return; // پاسخ قدیمی
+                        renderList(items);
+                };
+
+                input.addEventListener('focus', () => { open = true; runSearch(); });
+                input.addEventListener('input', () => {
+                        clearBtn.classList.toggle('hidden', !input.value);
+                        open = true;
+                        if (searchTimer) clearTimeout(searchTimer);
+                        searchTimer = setTimeout(runSearch, 250);
+                });
+                input.addEventListener('keydown', (e) => {
+                        if (e.key === 'Escape') { open = false; list.classList.add('hidden'); input.setAttribute('aria-expanded', 'false'); }
+                });
+                clearBtn.addEventListener('click', () => {
+                        setSelected(0, '');
+                        input.value = '';
+                        clearBtn.classList.add('hidden');
+                        input.focus();
+                });
+                document.addEventListener('click', (e) => {
+                        if (!document.contains(input)) return;
+                        if (!e.target.closest('#ra-cat-combo')) {
+                                list.classList.add('hidden');
+                                input.setAttribute('aria-expanded', 'false');
+                                open = false;
+                        }
+                });
+
+                /* ---- تگ‌ها ---- */
                 el.querySelectorAll('.tag-chip input').forEach((i) => i.addEventListener('change', () => {
                         i.closest('.tag-chip').classList.toggle('on', i.checked);
                 }));
 
                 el.querySelector('#ra-save').addEventListener('click', async () => {
-                        const cat = el.querySelector('#ra-cat').value;
+                        const cat = hidden.value;
                         if (!cat) { toast('دسته‌بندی را انتخاب کنید (برای ماندن در صف، دسته «ثبت جهت بازبینی» را بگذارید).', 'warn'); return; }
                         const tags = [];
                         el.querySelectorAll('.tag-chip.on').forEach((l) => tags.push(parseInt(l.getAttribute('data-tag'), 10)));

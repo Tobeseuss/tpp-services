@@ -868,18 +868,16 @@ TPP.offline = (function () {
                 return out;
         }
 
-        /** تطبیق ساختاری رکورد (بازه ویرایش + دایری + فیلترهای اختصاصی) — متن آزاد جداگانه بررسی می‌شود */
+        /** تطبیق ساختاری رکورد (بازه ویرایش + فیلترهای اختصاصی) — متن آزاد جداگانه بررسی می‌شود (۲.۰.۱ — بدون دایری) */
         function rowMatch(row, q, filters, schema, upd) {
                 const uFrom = upd && upd.from ? String(upd.from) : '';
                 const uTo = upd && upd.to ? String(upd.to) : '';
-                const prog = (upd && upd.prog) || null;
                 // بازه زمانی ویرایش — مقایسه بخش تاریخ (۱۰ نویسه اول) به‌صورت متنی و بدون منطقه‌زمانی
                 if (uFrom || uTo) {
                         const d = String(row.updated_at || '').slice(0, 10);
                         if (uFrom && d < uFrom) return false;
                         if (uTo && d > uTo) return false;
                 }
-                if (!progMatchRow(row, prog)) return false;
                 // فیلترهای اختصاصی
                 for (const [slug, val] of Object.entries(filters || {})) {
                         const svcVal = norm(row[slug] !== undefined ? row[slug] : (row.address ? row.address[slug] : ''));
@@ -895,37 +893,11 @@ TPP.offline = (function () {
                 return out;
         }
 
-        /** ۱.۱۲.۰ — تطبیق وضعیت دایری روی خلاصه progress ردیف (معادل منطق SQL سرور) */
-        function progMatchRow(row, prog) {
-                if (!prog || (!prog.status && !prog.step)) return true;
-                const p = row && row.progress;
-                const done = p ? (p.done || 0) : 0;
-                const total = p ? (p.total || 16) : 16;
-                // ۱.۱۴.۰ — خرابی‌ها آرایه‌اند (failures)؛ failure تکی برای داده قدیمی
-                const fails = p ? ((p.failures && p.failures.length) ? p.failures.slice() : (p.failure ? [p.failure] : [])) : [];
-                const hasFail = fails.length > 0;
-                const steps = p && Array.isArray(p.steps) ? p.steps : [];
-                if (prog.status) {
-                        const st = prog.status;
-                        // هماهنگ با سرور: خرابی اولویت دارد (none/progress/done فقط بدون خرابی)
-                        if (st === 'none' && !(done === 0 && !hasFail)) return false;
-                        if (st === 'progress' && !((done > 0 && done < total) && !hasFail)) return false;
-                        if (st === 'done' && !(done >= total && !hasFail)) return false;
-                        if (st === 'fail' && !hasFail) return false;
-                        if (st.indexOf('fail_') === 0 && fails.indexOf(st.slice(5)) === -1) return false;
-                }
-                if (prog.step) {
-                        const has = steps.indexOf(prog.step) !== -1;
-                        if (prog.stepState === 'todo' ? has : !has) return false;
-                }
-                return true;
-        }
-
         /**
          * جستجوی محلی (آفلاین) — ۱.۳۰.۰: از ایندکس درون-رم استفاده می‌کند (سرعت چند ده برابر در تایپ متوالی)؛
          * در دسترس نبودن ایندکس → پیمایش cursor. فیلتر دسته/تگ هم اکنون آفلاین اعمال می‌شود (۱.۳۰.۰).
          * sort: updated|unit|block|postal|address — order: asc|desc (هماهنگ با سرور)
-         * upd: {from, to, prog, cat, tags}
+         * upd: {from, to, cat, tags} (۲.۰.۱ — prog حذف شد)
          */
         async function searchLocal(query, filters, schema, sort, order, upd) {
                 const q = norm(query);
@@ -933,7 +905,7 @@ TPP.offline = (function () {
                 const tagIds = (upd && Array.isArray(upd.tags)) ? upd.tags.map((t) => parseInt(t, 10) || 0).filter(Boolean) : [];
                 const normFilters = normFiltersOf(filters);
                 const keys = searchableKeys(schema);
-                const updOnly = { from: (upd && upd.from) || '', to: (upd && upd.to) || '', prog: (upd && upd.prog) || null };
+                const updOnly = { from: (upd && upd.from) || '', to: (upd && upd.to) || '' };
 
                 let entries = null;
                 try { entries = Array.from((await getIndex(schema)).values()); } catch (e) { entries = null; }
