@@ -1297,7 +1297,7 @@ select.btn.invalid { border-color: #e05252; box-shadow: 0 0 0 2px color-mix(in s
 .rel-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
 .rel-name { flex: 1 1 auto; }
 .rel-date { font-size: 12px; }
-.rel-link { font-size: 12px; text-decoration: none; white-space: nowrap; color: var(--accent); }
+/* ۲.۱.۱ — قاعده rel-link (لینک گیت‌هاب) حذف شد — کارت داشبورد فقط فهرست تغییرات است */
 .rel-body { font-size: 13px; line-height: 1.9; color: var(--text-soft); }
 .rel-body .md-h { font-weight: 700; color: var(--text); margin-top: 4px; }
 .rel-body .md-bullet { color: var(--accent); font-weight: 700; }

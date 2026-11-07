@@ -95,9 +95,11 @@ class TPP_Categories {
                 if ( mb_strlen( $label ) > 190 ) {
                         $label = mb_substr( $label, 0, 190 );
                 }
-                // عنوان تکراری در همان kind مجاز نیست
+                // عنوان تکراری در همان kind مجاز نیست — ۲.۱.۱: تطبیق نرم تا «پروژه سازمانی» با «پروژه  سازمانی»
+                // (فاصله اضافه/نیم‌فاصله/ي-عربی) تعریف تکراری نسازد
+                $want = self::norm_label( $label );
                 foreach ( self::all( $kind ) as $c ) {
-                        if ( trim( (string) $c['label'] ) === $label ) {
+                        if ( self::norm_label( (string) $c['label'] ) === $want ) {
                                 return new WP_Error( 'tpp_duplicate', 'قبلاً با همین عنوان تعریف شده است.' );
                         }
                 }
@@ -121,8 +123,9 @@ class TPP_Categories {
                 $data = array();
                 if ( isset( $args['label'] ) && '' !== trim( (string) $args['label'] ) ) {
                         $label = mb_substr( trim( (string) $args['label'] ), 0, 190 );
+                        $want  = self::norm_label( $label );
                         foreach ( self::all( $item['kind'] ) as $c ) {
-                                if ( (int) $c['id'] !== (int) $id && trim( (string) $c['label'] ) === $label ) {
+                                if ( (int) $c['id'] !== (int) $id && self::norm_label( (string) $c['label'] ) === $want ) {
                                         return new WP_Error( 'tpp_duplicate', 'عنوان تکراری است.' );
                                 }
                         }
@@ -349,12 +352,16 @@ class TPP_Categories {
         /**
          * تبدیل متن سلول اکسل (برچسب‌ها با جداکننده کاما/؛) به شناسه‌ها — برای ایمپورت.
          * گزینه‌های ناموجود اختیاری‌اند: $auto_create برچسب جدید می‌سازد (پیش‌فرض).
-         * خروجی: array(ids, created_count)
+         * ۲.۱.۱ — تطبیق نرم: اگر تطبیق دقیق برچسب پیدا نشد، برچسب‌ها با نرمال‌سازی مقایسه
+         * می‌شوند تا تفاوت‌های رایج فایل‌های اکسل (فاصله اضافه، نیم‌فاصله/فاصله، ي/ی عربی،
+         * ك/ک عربی، اعراب و…) باعث «دسته‌بندی تعریف‌شده اعمال نشد» یا ساخت تعریف تکراری نشود.
+         * خروجی: array(ids, created_count, created_labels) — labels = تعریف‌های تازه‌ساخته‌شده
          */
         public static function resolve_labels( $kind, $text, $auto_create = true ) {
-                $created = 0;
-                $ids     = array();
-                $parts   = array_filter( array_map( 'trim', preg_split( '/[,،;؛|]/u', (string) $text ) ) );
+                $created        = 0;
+                $created_labels = array();
+                $ids            = array();
+                $parts          = array_filter( array_map( 'trim', preg_split( '/[,،;؛|]/u', (string) $text ) ) );
                 foreach ( $parts as $part ) {
                         if ( '' === $part ) {
                                 continue;
@@ -366,18 +373,43 @@ class TPP_Categories {
                                         break;
                                 }
                         }
+                        // ۲.۱.۱ — پاس دوم: تطبیق نرم با نرمال‌سازی برچسب
+                        if ( ! $found ) {
+                                $want = self::norm_label( $part );
+                                if ( '' !== $want ) {
+                                        foreach ( self::all( $kind ) as $c ) {
+                                                if ( self::norm_label( (string) $c['label'] ) === $want ) {
+                                                        $found = (int) $c['id'];
+                                                        break;
+                                                }
+                                        }
+                                }
+                        }
                         if ( ! $found && $auto_create ) {
                                 $new_id = self::add( array( 'kind' => $kind, 'label' => $part ) );
                                 if ( ! is_wp_error( $new_id ) ) {
-                                        $found   = (int) $new_id;
+                                        $found            = (int) $new_id;
                                         $created++;
+                                        $created_labels[] = $part;
                                 }
                         }
                         if ( $found && ! in_array( $found, $ids, true ) ) {
                                 $ids[] = $found;
                         }
                 }
-                return array( $ids, $created );
+                return array( $ids, $created, $created_labels );
+        }
+
+        /** ۲.۱.۱ — نرمال‌سازی برچسب دسته/تگ برای تطبیق نرم (هم‌سنتن با TPP_Services::normalize) */
+        public static function norm_label( $text ) {
+                $t = (string) $text;
+                $t = str_replace(
+                        array( 'ي', 'ك', 'ة', 'أ', 'إ', 'آ', "\xE2\x80\x8C", "\xC2\xA0" ),
+                        array( 'ی', 'ک', 'ه', 'ا', 'ا', 'ا', ' ', ' ' ),
+                        $t
+                );
+                $t = preg_replace( '/\s+/u', ' ', $t );
+                return trim( mb_strtolower( null === $t ? '' : $t ) );
         }
 
         /* ---------------------------------------------------------------------

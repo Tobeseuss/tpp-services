@@ -9,7 +9,7 @@ window.TPP = window.TPP || {};
 
 /** نسخه این کد — با نسخه‌ای که سرور در bootstrap می‌فرستد مقایسه می‌شود؛
  *  اگر فرق کنند یعنی پوسته قدیمی در مرورگر مانده و باید تازه شود. */
-TPP.VERSION = '2.1.0';
+TPP.VERSION = '2.1.1';
 
 // ۲.۰.۱ — ماژول TPP.progressUtil و کاتالوگ «پیشرفت دایری» کامل حذف شدند.
 
@@ -981,7 +981,7 @@ TPP.app = (function () {
                 <div class="card" id="dash-changelog">
                         <h3>🆕 تغییرات نسخه‌های اخیر سامانه <span class="muted" style="font-weight:400">— نسخه فعلی: v${esc(TPP.VERSION)}</span></h3>
                         <div id="changelog-box" class="changelog-box"><p class="muted">در حال دریافت تغییرات نسخه‌ها…</p></div>
-                        <p class="muted" style="margin-bottom:0">این بخش مستقیم از یادداشت‌های انتشار رسمی پروژه در گیت‌هاب تغذیه می‌شود و با هر نسخه جدید خودکار به‌روز می‌شود.</p>
+                        <p class="muted" style="margin-bottom:0">این فهرست با هر نسخه جدید سامانه خودکار به‌روز می‌شود.</p>
                 </div>`;
 
                 const qn = document.getElementById('qa-new');
@@ -1029,17 +1029,17 @@ TPP.app = (function () {
         function changelogHtml(data) {
                 const rels = (data && data.releases ? data.releases : []).slice(0, 5);
                 if (!rels.length) return '<p class="muted">تغییری برای نمایش نیست.</p>';
+                /* ۲.۱.۱ — لینک «↗ گیت‌هاب» از آیتم‌ها حذف شد (درخواست کاربر — فقط فهرست تغییرات کافی است) */
                 return rels.map((r) => `
                         <div class="rel-item${r.current ? ' current' : ''}">
                                 <div class="rel-head">
                                         <span class="chip${r.current ? ' ok' : ' rel-tag'}">v${esc(String(r.tag))}${r.current ? ' — نسخه فعلی' : ''}</span>
                                         <b class="rel-name">${esc(String(r.name || ''))}</b>
                                         ${r.date ? '<span class="muted rel-date">' + esc(fmtDate(r.date)) + '</span>' : ''}
-                                        ${r.url ? '<a class="rel-link" href="' + esc(String(r.url)) + '" target="_blank" rel="noopener noreferrer" title="مشاهده در گیت‌هاب">↗ گیت‌هاب</a>' : ''}
                                 </div>
                                 <div class="rel-body">${mdLite(r.body)}</div>
                         </div>`).join('')
-                        + (String(data.source) === 'cache' ? '<p class="muted rel-stale">⚠️ نمایش آخرین نسخه ذخیره‌شده — دریافت تازه از گیت‌هاب ممکن نشد.</p>' : '');
+                        + (String(data.source) === 'cache' ? '<p class="muted rel-stale">⚠️ نمایش آخرین نسخه ذخیره‌شده — دریافت تازهٔ تغییرات ممکن نشد.</p>' : '');
         }
 
         async function loadDashboardChangelog() {

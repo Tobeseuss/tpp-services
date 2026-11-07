@@ -52,9 +52,9 @@ class TPP_Import {
 
         private function pseudo_aliases() {
                 return array(
-                        /* ۱.۱۹.۰ — دسته‌بندی/تگ */
-                        self::CATEGORY_FIELD => array( 'دسته‌بندی پروژه', 'دسته‌بندی', 'دسته بندی', 'دسته', 'category', 'پروژه' ),
-                        self::TAGS_FIELD => array( 'تگ‌ها', 'تگها', 'تگ', 'برچسب‌ها', 'برچسب', 'tags', 'برچسب سرویس' ),
+                        /* ۱.۱۹.۰ — دسته‌بندی/تگ — ۲.۱.۱: عنوان‌های رایج دیگر (طبقه‌بندی/گروه/نام دسته و…) هم شناسایی می‌شوند */
+                        self::CATEGORY_FIELD => array( 'دسته‌بندی پروژه', 'دسته‌بندی', 'دسته بندی', 'دسته', 'category', 'پروژه', 'طبقه‌بندی', 'گروه', 'گروه پروژه', 'دسته‌بندی پروژه‌ها', 'نام دسته', 'نوع پروژه', 'project category', 'cat' ),
+                        self::TAGS_FIELD => array( 'تگ‌ها', 'تگها', 'تگ', 'برچسب‌ها', 'برچسب', 'tags', 'برچسب سرویس', 'labels', 'تگ سرویس', 'برچسب‌های سرویس' ),
                 );
         }
 
@@ -581,9 +581,12 @@ class TPP_Import {
                 $services = tpp()->services();
                 // ۱.۸.۰ — ردیف‌های خالی فایل که در پیش‌نمایش حذف شدند در گزارش هم دیده می‌شوند
                 $report   = array( 'created' => 0, 'updated' => 0, 'skipped' => 0, 'linked' => 0, 'new_address' => 0, 'errors' => array(), 'conflicts' => 0, 'empty_rows' => (int) ( $session['empty_rows'] ?? 0 ) );
-                /* ۱.۱۹.۰ — دسته‌بندی/تگ: برچسب‌های اکسل به شناسه تبدیل می‌شوند؛ ناموجودها خودکار ساخته می‌شوند */
+                /* ۱.۱۹.۰ — دسته‌بندی/تگ: برچسب‌های اکسل به شناسه تبدیل می‌شوند؛ ناموجودها خودکار ساخته می‌شوند
+                 * ۲.۱.۱ — گزارش شفاف: تعداد/عنوان تعریف‌های تازه‌ساخته‌شده + تعداد ردیف‌هایی که دسته/تگ رویشان اعمال شد */
                 $report['categories_created'] = 0;
-                $report['tags_created'] = 0;
+                $report['tags_created']       = 0;
+                $report['tax_created_labels'] = array(); // [kind, label] تعریف‌های تازه‌ساخته‌شده
+                $report['tax_rows']           = 0;       // ردیف‌هایی که دسته یا تگ رویشان اعمال شد
                 $in_file  = array(); // مقدار کلید → ردیف (تشخیص تکراری داخل فایل)
                 $row_no   = 1;       // ردیف سرستون = ۱
 
@@ -626,16 +629,30 @@ class TPP_Import {
                                 continue;
                         }
 
-                        /* ۱.۱۹.۰ — رزولوی برچسب دسته/تگ به شناسه (برچسب ناموجود → تعریف خودکار) */
+                        /* ۱.۱۹.۰ — رزولوی برچسب دسته/تگ به شناسه (برچسب ناموجود → تعریف خودکار)
+                         * ۲.۱.۱ — تطبیق نرم در resolve_labels + ثبت برچسب‌های تازه‌ساخته‌شده در گزارش */
+                        $tax_applied = false;
                         if ( ! empty( $tax_data['category'] ) ) {
-                                list( $cat_ids, $cat_created ) = TPP_Categories::resolve_labels( 'category', $tax_data['category'], true );
+                                list( $cat_ids, $cat_created, $cat_new_labels ) = TPP_Categories::resolve_labels( 'category', $tax_data['category'], true );
                                 $report['categories_created'] += $cat_created;
+                                foreach ( $cat_new_labels as $lb ) {
+                                        $report['tax_created_labels'][] = array( 'kind' => 'category', 'label' => $lb );
+                                }
                                 $tax_data['category'] = $cat_ids ? $cat_ids[0] : 0;
+                                if ( $cat_ids ) {
+                                        $tax_applied = true;
+                                }
                         }
                         if ( ! empty( $tax_data['tags'] ) ) {
-                                list( $tag_ids, $tag_created ) = TPP_Categories::resolve_labels( 'tag', $tax_data['tags'], true );
+                                list( $tag_ids, $tag_created, $tag_new_labels ) = TPP_Categories::resolve_labels( 'tag', $tax_data['tags'], true );
                                 $report['tags_created'] += $tag_created;
+                                foreach ( $tag_new_labels as $lb ) {
+                                        $report['tax_created_labels'][] = array( 'kind' => 'tag', 'label' => $lb );
+                                }
                                 $tax_data['tags'] = $tag_ids;
+                                if ( $tag_ids ) {
+                                        $tax_applied = true;
+                                }
                         }
 
                         try {
@@ -686,6 +703,9 @@ class TPP_Import {
                                                         $report['errors'][] = array( 'row' => $row_no, 'message' => $result->get_error_message() );
                                                 }
                                                 continue;
+                                        }
+                                        if ( $tax_applied ) {
+                                                $report['tax_rows']++; // ۲.۱.۱ — دسته/تگ واقعاً روی این ردیف اعمال شد
                                         }
                                         $report['updated']++;
                                         if ( ! empty( $result['conflict'] ) ) {
@@ -757,6 +777,9 @@ class TPP_Import {
                                                         $report['errors'][] = array( 'row' => $row_no, 'message' => $result->get_error_message() );
                                                 }
                                                 continue;
+                                        }
+                                        if ( $tax_applied ) {
+                                                $report['tax_rows']++; // ۲.۱.۱ — دسته/تگ واقعاً روی این ردیف اعمال شد
                                         }
                                         $report['created']++;
                                 }

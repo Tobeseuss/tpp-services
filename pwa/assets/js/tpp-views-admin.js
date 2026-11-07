@@ -137,6 +137,7 @@ TPP.views = TPP.views || {};
                                         </tr>`).join('')}
                                 </tbody>
                         </table></div>
+                        <div class="hint" style="margin-top:8px">◆ ستون‌های دسته‌بندی/تگ: مقدار هر سلول «نام دسته/تگ» است (چند تگ با کاما). اگر نام در تعریف‌ها نباشد خودکار ساخته می‌شود؛ تفاوت فاصله/نیم‌فاصله/ی-عربی در تطبیق اهمیتی ندارد.</div>
                 </div>
                 <div class="card">
                         <h3>تنظیمات ثبت</h3>
@@ -364,11 +365,25 @@ TPP.views = TPP.views || {};
                                 </ul>
                         </div>`;
                 }
+                /* ۲.۱.۱ — گزارش شفاف دسته‌بندی/تگ: اعمال‌شدن + تعریف‌های تازه‌ساخته‌شده */
+                const taxLabels = Array.isArray(report.tax_created_labels) ? report.tax_created_labels : [];
+                const taxRows = report.tax_rows || 0;
+                const newCats = taxLabels.filter((t) => t && 'category' === t.kind && t.label).map((t) => esc(String(t.label)));
+                const newTags = taxLabels.filter((t) => t && 'tag' === t.kind && t.label).map((t) => esc(String(t.label)));
+                let taxBanner = '';
+                if (taxRows || newCats.length || newTags.length) {
+                        const parts = [];
+                        if (taxRows) parts.push(`دسته/تگ روی <b>${taxRows}</b> سرویس اعمال شد`);
+                        if (newCats.length) parts.push(`دسته‌بندی جدید ساخته‌شده: <b>${newCats.join('، ')}</b>`);
+                        if (newTags.length) parts.push(`تگ جدید ساخته‌شده: <b>${newTags.join('، ')}</b>`);
+                        taxBanner = `<div class="alert info" style="margin-bottom:14px">🏷 ${parts.join(' — ')}</div>`;
+                }
                 ws.innerHTML = `
                 <div class="card">
                         <h3>گزارش ایمپورت</h3>
                         ${bkBanner}
                         ${diag}
+                        ${taxBanner}
                         <div class="stat-grid">
                                 <div class="stat ok"><div class="num">${report.created}</div><div class="lbl">ثبت جدید</div></div>
                                 <div class="stat"><div class="num">${report.updated}</div><div class="lbl">به‌روزرسانی</div></div>
