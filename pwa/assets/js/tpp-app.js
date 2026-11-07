@@ -9,7 +9,7 @@ window.TPP = window.TPP || {};
 
 /** نسخه این کد — با نسخه‌ای که سرور در bootstrap می‌فرستد مقایسه می‌شود؛
  *  اگر فرق کنند یعنی پوسته قدیمی در مرورگر مانده و باید تازه شود. */
-TPP.VERSION = '2.1.1';
+TPP.VERSION = '2.1.2';
 
 // ۲.۰.۱ — ماژول TPP.progressUtil و کاتالوگ «پیشرفت دایری» کامل حذف شدند.
 
@@ -945,7 +945,7 @@ TPP.app = (function () {
                         <div class="stat ok"><div class="num">${stats.addresses || 0}</div><div class="lbl">آدرس‌های ثبت‌شده</div></div>
                         <div class="stat"><div class="num">${stats.changes || 0}</div><div class="lbl">رکوردهای تاریخچه</div></div>
                         <div class="stat"><div class="num">${stats.today || 0}</div><div class="lbl">تغییرات امروز</div></div>
-                        <div class="stat warn stat-link" id="stat-conflicts" role="button" tabindex="0" title="بررسی و حل تعارض‌ها در بخش «بررسی موارد تکراری» — ۲.۱.۰"><div class="num">${stats.conflicts || 0}</div><div class="lbl">تعارض‌های ثبت‌شده ⌕</div></div>
+                        <div class="stat warn stat-link" id="stat-conflicts" role="button" tabindex="0" title="تعارض‌های نیازمند بررسی — پس از بستن هر تعارض، از این آمار حذف می‌شود (کلیک: بررسی موارد تکراری) — ۲.۱.۲"><div class="num">${stats.conflicts || 0}</div><div class="lbl">تعارض‌های باز ⌕</div></div>
                         <div class="stat warn"><div class="num">${pending}</div><div class="lbl">در صف همگام‌سازی</div></div>
                 </div>
 
@@ -2204,7 +2204,7 @@ TPP.app = (function () {
                                         <b>${actionLabels[h.action] || h.action}</b>
                                         <span class="chip">${h.entity === 'service' ? 'سرویس #' + h.entity_id : 'آدرس #' + h.entity_id}</span>
                                         ${(h.changes && h.changes.fmt === 2 && Array.isArray(h.changes.events) && h.changes.events.length > 1) ? '<span class="chip ok">' + h.changes.events.length + ' تغییر امروز</span>' : ''}
-                                        ${h.is_conflict ? '<span class="chip warn">تعارض آفلاین</span>' : ''}
+                                        ${h.is_conflict ? (h.resolved ? '<span class="chip">تعارض بسته‌شده ✓</span>' : '<span class="chip warn">تعارض باز</span>') : ''}
                                         ${h.source === 'offline' ? '<span class="chip">آفلاین</span>' : ''}
                                         ${canDelHist ? `<button class="btn btn-sm btn-danger tl-del" data-hdel="${h.id}" title="حذف این رکورد تاریخچه">🗑</button>` : ''}
                                 </div>

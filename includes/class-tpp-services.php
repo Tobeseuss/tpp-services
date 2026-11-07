@@ -966,12 +966,16 @@ class TPP_Services {
 
         /** آمار داشبورد */
         public function stats() {
+                // ۲.۱.۲ — «تعارض‌ها» فقط تعارض‌های باز شمرده می‌شوند؛ پس از بستن تعارض، اثری از آن در آمار داشبورد نمی‌ماند
+                // (conflict_counts() ستون‌های resolved را به‌صورت دفاعی تضمین می‌کند)
+                $conf_counts = TPP_History::conflict_counts();
                 return array(
                         'services'   => (int) TPP_DB::get_var( "SELECT COUNT(*) FROM " . TPP_DB::table( 'services' ) ),
                         'addresses'  => (int) TPP_DB::get_var( "SELECT COUNT(*) FROM " . TPP_DB::table( 'addresses' ) ),
                         'changes'    => (int) TPP_DB::get_var( "SELECT COUNT(*) FROM " . TPP_DB::table( 'history' ) ),
                         'today'      => (int) TPP_DB::get_var( "SELECT COUNT(*) FROM " . TPP_DB::table( 'history' ) . " WHERE DATE(changed_at) = %s", array( TPP_Date::today() ) ),
-                        'conflicts'  => (int) TPP_DB::get_var( "SELECT COUNT(*) FROM " . TPP_DB::table( 'history' ) . " WHERE is_conflict = 1" ),
+                        'conflicts'  => (int) ( $conf_counts['unresolved'] ?? 0 ),
+                        'conflicts_closed' => (int) ( $conf_counts['resolved'] ?? 0 ), // ۲.۱.۲ — تعداد بسته‌شده‌ها (شفافیت گزارش)
                         'last_change'=> TPP_DB::get_var( "SELECT changed_at FROM " . TPP_DB::table( 'history' ) . " ORDER BY id DESC LIMIT 1" ),
                         // ۲.۰.۱ — آمار پیشرفت دایری حذف شد
                 );

@@ -12,7 +12,7 @@
  */
 'use strict';
 
-const SW_VERSION = 'tpp-v2.1.1';
+const SW_VERSION = 'tpp-v2.1.2';
 const SHELL_CACHE = 'tpp-shell-' + SW_VERSION;
 const DATA_CACHE  = 'tpp-data-' + SW_VERSION;
 
