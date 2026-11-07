@@ -9,7 +9,7 @@ window.TPP = window.TPP || {};
 
 /** نسخه این کد — با نسخه‌ای که سرور در bootstrap می‌فرستد مقایسه می‌شود؛
  *  اگر فرق کنند یعنی پوسته قدیمی در مرورگر مانده و باید تازه شود. */
-TPP.VERSION = '2.0.1';
+TPP.VERSION = '2.1.0';
 
 // ۲.۰.۱ — ماژول TPP.progressUtil و کاتالوگ «پیشرفت دایری» کامل حذف شدند.
 
@@ -945,7 +945,7 @@ TPP.app = (function () {
                         <div class="stat ok"><div class="num">${stats.addresses || 0}</div><div class="lbl">آدرس‌های ثبت‌شده</div></div>
                         <div class="stat"><div class="num">${stats.changes || 0}</div><div class="lbl">رکوردهای تاریخچه</div></div>
                         <div class="stat"><div class="num">${stats.today || 0}</div><div class="lbl">تغییرات امروز</div></div>
-                        <div class="stat warn"><div class="num">${stats.conflicts || 0}</div><div class="lbl">تعارض‌های ثبت‌شده</div></div>
+                        <div class="stat warn stat-link" id="stat-conflicts" role="button" tabindex="0" title="بررسی و حل تعارض‌ها در بخش «بررسی موارد تکراری» — ۲.۱.۰"><div class="num">${stats.conflicts || 0}</div><div class="lbl">تعارض‌های ثبت‌شده ⌕</div></div>
                         <div class="stat warn"><div class="num">${pending}</div><div class="lbl">در صف همگام‌سازی</div></div>
                 </div>
 
@@ -976,6 +976,12 @@ TPP.app = (function () {
                                         <li>تاریخچه: از صفحه «تاریخچه تغییرات» همه تغییرات با جزئیات قدیم/جدید قابل مشاهده است.</li>
                                 </ul>
                         </div>
+                </div>
+
+                <div class="card" id="dash-changelog">
+                        <h3>🆕 تغییرات نسخه‌های اخیر سامانه <span class="muted" style="font-weight:400">— نسخه فعلی: v${esc(TPP.VERSION)}</span></h3>
+                        <div id="changelog-box" class="changelog-box"><p class="muted">در حال دریافت تغییرات نسخه‌ها…</p></div>
+                        <p class="muted" style="margin-bottom:0">این بخش مستقیم از یادداشت‌های انتشار رسمی پروژه در گیت‌هاب تغذیه می‌شود و با هر نسخه جدید خودکار به‌روز می‌شود.</p>
                 </div>`;
 
                 const qn = document.getElementById('qa-new');
@@ -988,6 +994,81 @@ TPP.app = (function () {
                         await runOfflineSync();
                         viewDashboard();
                 });
+                // ۲.۱.۰ — کلیک روی آمار تعارض‌ها → بخش بررسی موارد تکراری (تب تعارض‌ها)
+                const scEl = document.getElementById('stat-conflicts');
+                if (scEl) scEl.addEventListener('click', () => { if (TPP.adminUi && TPP.adminUi.openConflicts) TPP.adminUi.openConflicts(); else go('duplicates'); });
+                // ۲.۱.۰ — کارت تغییرات نسخه‌های اخیر (منبع: GitHub Releases)
+                loadDashboardChangelog();
+        }
+
+        /* ==================== ۲.۱.۰ — تغییرات نسخه‌های اخیر (GitHub Releases) ==================== */
+
+        const CHANGELOG_CACHE_KEY = 'tpp_changelog_cache_v1';
+
+        /** رندر امن متن Markdown ساده (بدون لینک‌سازی — فقط escape + بولد + بولت + سرتیتر) */
+        function mdLite(text) {
+                const lines = String(text == null ? '' : text).split(/\r?\n/);
+                const out = [];
+                for (let ln of lines) {
+                        let t = String(ln).trim();
+                        if (!t) { out.push('<div style="height:5px"></div>'); continue; }
+                        let head = false;
+                        let m = /^(#{1,6})\s+(.*)$/.exec(t);
+                        if (m) { head = true; t = m[2]; }
+                        let bullet = false;
+                        m = /^([-*•])\s+(.*)$/.exec(t);
+                        if (m) { bullet = true; t = m[2]; }
+                        let e = esc(t);
+                        e = e.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+                        e = e.replace(/`([^`]+)`/g, '<code>$1</code>');
+                        out.push('<div' + (head ? ' class="md-h"' : '') + '>' + (bullet ? '<span class="md-bullet">•</span> ' : '') + e + '</div>');
+                }
+                return out.join('');
+        }
+
+        function changelogHtml(data) {
+                const rels = (data && data.releases ? data.releases : []).slice(0, 5);
+                if (!rels.length) return '<p class="muted">تغییری برای نمایش نیست.</p>';
+                return rels.map((r) => `
+                        <div class="rel-item${r.current ? ' current' : ''}">
+                                <div class="rel-head">
+                                        <span class="chip${r.current ? ' ok' : ' rel-tag'}">v${esc(String(r.tag))}${r.current ? ' — نسخه فعلی' : ''}</span>
+                                        <b class="rel-name">${esc(String(r.name || ''))}</b>
+                                        ${r.date ? '<span class="muted rel-date">' + esc(fmtDate(r.date)) + '</span>' : ''}
+                                        ${r.url ? '<a class="rel-link" href="' + esc(String(r.url)) + '" target="_blank" rel="noopener noreferrer" title="مشاهده در گیت‌هاب">↗ گیت‌هاب</a>' : ''}
+                                </div>
+                                <div class="rel-body">${mdLite(r.body)}</div>
+                        </div>`).join('')
+                        + (String(data.source) === 'cache' ? '<p class="muted rel-stale">⚠️ نمایش آخرین نسخه ذخیره‌شده — دریافت تازه از گیت‌هاب ممکن نشد.</p>' : '');
+        }
+
+        async function loadDashboardChangelog() {
+                const box = document.getElementById('changelog-box');
+                if (!box) return;
+                let cache = null;
+                try { cache = JSON.parse(localStorage.getItem(CHANGELOG_CACHE_KEY) || 'null'); } catch (e) {}
+                if (cache && Array.isArray(cache.releases) && cache.releases.length) box.innerHTML = changelogHtml(cache);
+                if (!TPP.offline.state().online) {
+                        if (!cache) box.innerHTML = '<p class="muted">📴 در حالت آفلاین تغییرات نسخه‌ها نمایش داده نمی‌شود — پس از اتصال دوباره وارد داشبورد شوید.</p>';
+                        return;
+                }
+                try {
+                        const res = await TPP.api.request('GET', 'about/changelog');
+                        const data = {
+                                releases: (res && res.releases) || [],
+                                source: res && res.source,
+                                fetched_at: res && res.fetched_at,
+                                current_version: res && res.current_version,
+                        };
+                        if (data.releases.length) {
+                                try { localStorage.setItem(CHANGELOG_CACHE_KEY, JSON.stringify(data)); } catch (e) {}
+                                box.innerHTML = changelogHtml(data);
+                        } else if (!cache) {
+                                box.innerHTML = '<p class="muted">' + esc((res && res.error) || 'یادداشت نسخه‌ای برای نمایش یافت نشد.') + '</p>';
+                        }
+                } catch (e) {
+                        if (!cache) box.innerHTML = '<p class="muted">دریافت تغییرات نسخه‌ها ممکن نشد — ' + esc(e.message || '') + '</p>';
+                }
         }
 
         /* ==================== نما: سرویس‌ها (جستجوی زنده) ==================== */
@@ -1167,9 +1248,11 @@ TPP.app = (function () {
                                 <div class="filters-grid" id="filters-grid"></div>
                                 <div class="prog-filter" id="cat-filter" style="margin-top:10px">
                                         <label class="pf-label">🏷 دسته‌بندی پروژه:</label>
-                                        <select id="cat-filter-sel" class="btn" title="فیلتر سرویس‌ها بر اساس دسته‌بندی پروژه">
-                                                <option value="">همه دسته‌ها</option>
-                                        </select>
+                                        <div class="tpp-combo" id="cat-filter-combo">
+                                                <input type="text" class="combo-input" id="cat-filter-input" placeholder="همه دسته‌ها — تایپ کنید تا جستجو شود…" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list" title="۲.۱.۰ — جستجوی آجاکسی دسته‌ها با تایپ">
+                                                <button type="button" class="combo-clear hidden" id="cat-filter-clear" tabindex="-1" title="حذف فیلتر دسته">✕</button>
+                                                <div class="combo-list hidden" role="listbox"></div>
+                                        </div>
                                         <span class="pf-label" style="margin-right:8px">تگ‌ها:</span>
                                         <span class="tag-chips" id="tag-filter-box"><span class="muted">…</span></span>
                                 </div>
@@ -1197,16 +1280,41 @@ TPP.app = (function () {
                                 </div>
                         </div>`).join('');
 
-                /* ۱.۱۹.۰ — فیلتر دسته‌بندی/تگ‌ها (مثل فیلتر دایری) */
-                const catSel = document.getElementById('cat-filter-sel');
+                /* ۱.۱۹.۰ — فیلتر دسته‌بندی/تگ‌ها | ۲.۱.۰ — دسته‌بندی آجاکسی (تایپ → جستجوی سرور، همان تجربه کامبوی فرم) */
+                const catCombo = document.getElementById('cat-filter-combo');
+                const catInput = document.getElementById('cat-filter-input');
+                const catClearBtn = document.getElementById('cat-filter-clear');
                 const tagBox = document.getElementById('tag-filter-box');
-                if (catSel && tagBox) {
-                        const applyCat = () => { searchState.cat = catSel.value; searchState.page = 1; runSearch(); };
-                        catSel.addEventListener('change', applyCat);
-                        const renderCatFilter = (cats) => {
+                if (catCombo && catInput && catClearBtn && tagBox) {
+                        const norm2 = (s) => String(s == null ? '' : s).trim();
+                        const catLabelOfId = (id) => {
+                                const src = (state.cats && state.cats.categories) ? state.cats.categories : [];
+                                const c = src.find((x) => String(x.id) === String(id));
+                                return c ? c.label : ('#' + id);
+                        };
+                        /* آنلاین → سرور (GET categories?kind=category&q)؛ آفلاین/خطا → فهرست کش‌شده */
+                        const fetchCats = async (q) => {
+                                if (TPP.offline.state().online) {
+                                        try {
+                                                const params = { kind: 'category', per_page: 30 };
+                                                if (q) params.q = q;
+                                                const res = await TPP.api.request('GET', 'categories', null, params);
+                                                return (res && res.items) || [];
+                                        } catch (e) { /* ادامه با کش محلی */ }
+                                }
+                                const src = (state.cats && state.cats.categories) ? state.cats.categories : [];
+                                const qn = norm2(q).toLowerCase();
+                                return src.filter((c) => !qn || norm2(c.label).toLowerCase().indexOf(qn) !== -1).slice(0, 30);
+                        };
+                        const applyCat = (id, label) => {
+                                searchState.cat = id ? String(id) : '';
+                                catInput.value = id ? (label || catLabelOfId(id)) : '';
+                                catClearBtn.classList.toggle('hidden', !id);
+                                searchState.page = 1;
+                                runSearch();
+                        };
+                        const renderTagFilter = (cats) => {
                                 if (!cats) { tagBox.innerHTML = '<span class="muted">دسته‌بندی‌ای تعریف نشده — مدیر کل از «دسته‌بندی پروژه‌ها» تعریف کند.</span>'; return; }
-                                catSel.innerHTML = '<option value="">همه دسته‌ها</option>' + (cats.categories || []).map((c) =>
-                                        '<option value="' + esc(String(c.id)) + '"' + (String(c.id) === String(searchState.cat) ? ' selected' : '') + '>' + esc(c.label) + '</option>').join('');
                                 tagBox.innerHTML = (cats.tags || []).map((t) =>
                                         '<label class="chip tag-chip' + (searchState.tags.indexOf(t.id) !== -1 ? ' on' : '') + '"><input type="checkbox" value="' + esc(String(t.id)) + '"' + (searchState.tags.indexOf(t.id) !== -1 ? ' checked' : '') + '> ' + esc(t.label) + '</label>').join('') || '<span class="muted">تگی تعریف نشده</span>';
                                 tagBox.querySelectorAll('input[type=checkbox]').forEach((i) => i.addEventListener('change', () => {
@@ -1219,8 +1327,46 @@ TPP.app = (function () {
                                         runSearch();
                                 }));
                         };
-                        if (state.cats) renderCatFilter(state.cats);
-                        else TPP.api.request('GET', 'categories').then((c) => { state.cats = c; renderCatFilter(c); }).catch(() => renderCatFilter(null));
+                        if (state.cats) renderTagFilter(state.cats);
+                        else TPP.api.request('GET', 'categories').then((c) => { state.cats = c; renderTagFilter(c); }).catch(() => renderTagFilter(null));
+
+                        /* کامبوی آجاکسی دسته‌ها */
+                        const catList = catCombo.querySelector('.combo-list');
+                        let catSeq = 0, catTimer = null;
+                        const hideCatList = () => catList.classList.add('hidden');
+                        const renderCatList = (items) => {
+                                if (!items.length) { catList.innerHTML = '<div class="combo-empty">دسته‌ای با این عنوان یافت نشد.</div>'; return; }
+                                catList.innerHTML = items.map((c) =>
+                                        '<div class="combo-item" role="option" data-id="' + esc(String(c.id)) + '" data-label="' + esc(c.label) + '">' + esc(c.label) + (c.is_review ? ' ⏳' : '') + ' <span class="muted">(' + faNum(c.usage || 0) + ')</span></div>').join('');
+                                catList.querySelectorAll('.combo-item').forEach((el) => el.addEventListener('mousedown', (e) => {
+                                        e.preventDefault(); // پیش از blur — تا انتخاب ثبت شود
+                                        applyCat(parseInt(el.getAttribute('data-id'), 10) || 0, el.getAttribute('data-label') || '');
+                                        hideCatList();
+                                }));
+                        };
+                        const catRun = async () => {
+                                const s = ++catSeq;
+                                try {
+                                        const rows = await fetchCats(catInput.value.trim());
+                                        if (s === catSeq && document.contains(catCombo)) renderCatList(rows || []);
+                                } catch (e) { if (s === catSeq) renderCatList([]); }
+                        };
+                        catInput.addEventListener('focus', () => { catRun(); catList.classList.remove('hidden'); });
+                        catInput.addEventListener('input', () => {
+                                if (document.activeElement !== catInput) return; // dispatch برنامه‌نویسی‌شده منو را باز نکند
+                                catList.classList.remove('hidden');
+                                if (catTimer) clearTimeout(catTimer);
+                                catTimer = setTimeout(catRun, 300);
+                        });
+                        catInput.addEventListener('blur', () => setTimeout(hideCatList, 200));
+                        catInput.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideCatList(); });
+                        catClearBtn.addEventListener('click', () => { applyCat(0, ''); catInput.focus(); });
+                        /* بازیابی انتخاب قبلی (بازگشت به صفحه) — برچسب پس از رسیدن کش دسته‌ها کامل می‌شود */
+                        if (searchState.cat) {
+                                catInput.value = catLabelOfId(searchState.cat);
+                                catClearBtn.classList.remove('hidden');
+                                if (!state.cats) TPP.api.request('GET', 'categories').then((c) => { state.cats = c; renderTagFilter(c); if (searchState.cat) catInput.value = catLabelOfId(searchState.cat); }).catch(() => {});
+                        }
                 }
 
                 const input = document.getElementById('live-search');

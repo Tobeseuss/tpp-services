@@ -143,6 +143,12 @@ class TPP_History {
                 if ( ! empty( $args['conflict'] ) ) {
                         $where .= ' AND is_conflict = 1';
                 }
+                /* ۲.۱.۰ — فیلتر وضعیت بررسی تعارض: '' = همه، 0 = باز، 1 = بسته‌شده */
+                if ( isset( $args['resolved'] ) && '' !== $args['resolved'] && null !== $args['resolved'] ) {
+                        self::ensure_resolved_columns();
+                        $where  .= ' AND resolved = %d';
+                        $params[] = (int) $args['resolved'];
+                }
                 $table = TPP_DB::table( 'history' );
                 $total = (int) TPP_DB::get_var( "SELECT COUNT(*) FROM {$table}{$where}", $params );
                 $offset = ( max( 1, (int) $page ) - 1 ) * (int) $per_page;
@@ -168,10 +174,154 @@ class TPP_History {
                         $r['changes']   = json_decode( (string) $r['changes'], true );
                         $r['revision']  = (int) $r['revision'];
                         $r['is_conflict'] = (int) $r['is_conflict'];
+                        $r['resolved']    = isset( $r['resolved'] ) ? (int) $r['resolved'] : 0; // ۲.۱.۰
+                        $r['resolved_at'] = isset( $r['resolved_at'] ) ? (string) $r['resolved_at'] : '';
+                        $r['resolved_by_name'] = '';
+                        if ( isset( $r['resolved_by'] ) && (int) $r['resolved_by'] ) {
+                                $ru = get_userdata( (int) $r['resolved_by'] );
+                                $r['resolved_by_name'] = $ru ? $ru->display_name : '—';
+                        }
                         $r['event_count'] = isset( $r['event_count'] ) ? (int) $r['event_count'] : 0;
                         $rows_out[]      = $r;
                 }
                 return $rows_out;
+        }
+
+        /* ==================== تعارض‌های ثبت‌شده (۲.۱.۰) ==================== */
+
+        /**
+         * ۲.۱.۰ — ستون‌های وضعیت بررسی تعارض را در نصب‌های قدیمی می‌سازد (idempotent).
+         * resolved: 0=باز (نیازمند بررسی) / 1=بسته‌شده توسط مدیرکل
+         */
+        public static function ensure_resolved_columns() {
+                static $done = false;
+                if ( $done ) {
+                        return true;
+                }
+                $table = TPP_DB::table( 'history' );
+                if ( ! $table ) {
+                        return false;
+                }
+                $names = array();
+                foreach ( (array) TPP_DB::get_results( "SHOW COLUMNS FROM {$table}" ) as $c ) {
+                        $names[] = (string) ( $c['Field'] ?? '' );
+                }
+                if ( in_array( 'resolved', $names, true ) ) {
+                        $done = true;
+                        return true;
+                }
+                TPP_DB::query( "ALTER TABLE {$table} ADD COLUMN resolved TINYINT(1) NOT NULL DEFAULT 0" );
+                TPP_DB::query( "ALTER TABLE {$table} ADD COLUMN resolved_at DATETIME NULL" );
+                TPP_DB::query( "ALTER TABLE {$table} ADD COLUMN resolved_by BIGINT UNSIGNED NULL" );
+                TPP_DB::query( "ALTER TABLE {$table} ADD KEY conflict_res (is_conflict, resolved)" );
+                $done = true;
+                return true;
+        }
+
+        /** ۲.۱.۰ — بستن تعارض‌ها (تأیید توسط مدیرکل) — تعداد بسته‌شده برمی‌گردد */
+        public static function mark_resolved( $ids, $user_id ) {
+                self::ensure_resolved_columns();
+                $ids = array_values( array_unique( array_filter( array_map( 'intval', (array) $ids ) ) ) );
+                if ( empty( $ids ) ) {
+                        return 0;
+                }
+                $table = TPP_DB::table( 'history' );
+                $in    = implode( ',', $ids );
+                return (int) TPP_DB::query(
+                        "UPDATE {$table} SET resolved = 1, resolved_at = %s, resolved_by = %d WHERE id IN ({$in}) AND is_conflict = 1",
+                        array( TPP_Date::now(), (int) $user_id )
+                );
+        }
+
+        /** ۲.۱.۰ — رکوردهای تعارض برای سرویس‌های مشخص (decorated) — $resolved '' = همه / 0 / 1 */
+        public static function conflicts_for_services( $service_ids, $resolved = '' ) {
+                $ids = array_values( array_unique( array_filter( array_map( 'intval', (array) $service_ids ) ) ) );
+                if ( empty( $ids ) ) {
+                        return array();
+                }
+                if ( '' !== $resolved && null !== $resolved ) {
+                        self::ensure_resolved_columns();
+                }
+                $table   = TPP_DB::table( 'history' );
+                $in      = implode( ',', $ids );
+                $extra   = ( '' !== $resolved && null !== $resolved ) ? " AND resolved = " . ( (int) $resolved ) : '';
+                $rows    = TPP_DB::get_results(
+                        "SELECT * FROM {$table} WHERE entity = 'service' AND is_conflict = 1{$extra} AND entity_id IN ({$in}) ORDER BY id DESC LIMIT 1000",
+                        array()
+                );
+                return self::decorate( $rows );
+        }
+
+        /** ۲.۱.۰ — رکوردهای تعارض با شناسه‌های مشخص (برای حل تعارض) */
+        public static function conflicts_for_ids( $ids ) {
+                $ids = array_values( array_unique( array_filter( array_map( 'intval', (array) $ids ) ) ) );
+                if ( empty( $ids ) ) {
+                        return array();
+                }
+                self::ensure_resolved_columns();
+                $table = TPP_DB::table( 'history' );
+                $in    = implode( ',', $ids );
+                return self::decorate( TPP_DB::get_results(
+                        "SELECT * FROM {$table} WHERE id IN ({$in}) AND is_conflict = 1 ORDER BY id DESC",
+                        array()
+                ) );
+        }
+
+        /** ۲.۱.۰ — شمارش خلاصه تعارض‌ها: کل / باز / بسته‌شده */
+        public static function conflict_counts() {
+                self::ensure_resolved_columns();
+                $table = TPP_DB::table( 'history' );
+                $out   = array( 'total' => 0, 'unresolved' => 0, 'resolved' => 0 );
+                foreach ( (array) TPP_DB::get_results(
+                        "SELECT resolved, COUNT(*) AS n FROM {$table} WHERE is_conflict = 1 GROUP BY resolved",
+                        array()
+                ) as $r ) {
+                        $n = (int) ( $r['n'] ?? 0 );
+                        $out['total'] += $n;
+                        if ( 0 === (int) ( $r['resolved'] ?? 0 ) ) {
+                                $out['unresolved'] += $n;
+                        } else {
+                                $out['resolved'] += $n;
+                        }
+                }
+                return $out;
+        }
+
+        /** ۲.۱.۰ — مقادیر «قبل از تغییر» یک رکورد تعارض (برای بازگردانی) — فیلدهای پنهان حذف می‌شوند */
+        public static function old_values_payload( $row ) {
+                $changes = is_array( $row['changes'] ?? null ) ? $row['changes'] : json_decode( (string) ( $row['changes'] ?? '' ), true );
+                if ( empty( $changes ) || ( 'service' !== ( $row['entity'] ?? '' ) ) ) {
+                        return array();
+                }
+                if ( is_array( $changes ) && isset( $changes['fmt'] ) && 2 === (int) $changes['fmt'] ) {
+                        $map = array();
+                        foreach ( (array) ( $changes['events'] ?? array() ) as $ev ) {
+                                if ( 'address' === ( $ev['y'] ?? '' ) ) {
+                                        continue;
+                                }
+                                if ( 'create' === ( $ev['a'] ?? '' ) ) {
+                                        continue;
+                                }
+                                foreach ( (array) ( $ev['c'] ?? array() ) as $slug => $pair ) {
+                                        if ( is_array( $pair ) && array_key_exists( 'old', $pair ) && ! isset( $pair['hidden'] ) ) {
+                                                $map[ $slug ] = $pair['old'];
+                                        }
+                                }
+                                if ( ! empty( $map ) ) {
+                                        break;
+                                }
+                        }
+                        return $map;
+                }
+                $payload = array();
+                foreach ( (array) $changes as $slug => $pair ) {
+                        if ( is_array( $pair ) && array_key_exists( 'old', $pair ) && ! isset( $pair['hidden'] ) ) {
+                                $payload[ $slug ] = $pair['old'];
+                        } elseif ( is_scalar( $pair ) ) {
+                                $payload[ $slug ] = $pair;
+                        }
+                }
+                return $payload;
         }
 
         /* ==================== فرمت تجمیعی (نسخه ۲) ==================== */

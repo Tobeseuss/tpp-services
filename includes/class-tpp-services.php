@@ -1385,6 +1385,179 @@ class TPP_Services {
         }
 
         /**
+         * ۲.۱.۰ — فهرست سرویس‌های دارای «تعارض ثبت‌شده» (رکوردهای تاریخچه is_conflict=1 — تعارض نسخه در همگام‌سازی آفلاین/همزمانی).
+         * صفحه‌بندی بر اساس سرویس (نه رکورد) تا همه تعارض‌های یک سرویس یکجا دیده شوند؛
+         * جستجوی q روی شناسه سرویس و همه ستون‌های متنی/عددی ردیف سرویس (نرمال‌سازی ارقام فارسی).
+         * $args: q, resolved ('' همه / 0 فقط باز / 1 فقط بسته‌شده)
+         */
+        public function find_conflicts( $args = array(), $page = 1, $per = 20 ) {
+                $resolved = isset( $args['resolved'] ) ? $args['resolved'] : 0;
+                $q        = trim( (string) ( $args['q'] ?? '' ) );
+                $q_norm   = TPP_Date::en_num( $q );
+                $counts   = TPP_History::conflict_counts();
+
+                $hist_table = TPP_DB::table( 'history' );
+                $extra      = ( '' !== $resolved && null !== $resolved ) ? ' AND resolved = ' . ( (int) $resolved ) : '';
+                $rows = TPP_DB::get_results(
+                        "SELECT entity_id, MAX(id) AS last_id, MAX(changed_at) AS last_at FROM {$hist_table} WHERE entity = 'service' AND is_conflict = 1{$extra} GROUP BY entity_id ORDER BY last_id DESC LIMIT 5000",
+                        array()
+                );
+                $base = array(
+                        'total' => 0, 'page' => max( 1, (int) $page ), 'per_page' => max( 1, min( 100, (int) $per ) ),
+                        'pages' => 0, 'groups' => array(), 'summary' => $counts,
+                );
+                if ( empty( $rows ) ) {
+                        return $base;
+                }
+                $ids = array();
+                foreach ( (array) $rows as $r ) {
+                        $ids[ (int) $r['entity_id'] ] = array( 'last_at' => (string) ( $r['last_at'] ?? '' ) );
+                }
+
+                $svc_table = TPP_DB::table( 'services' );
+                $in        = implode( ',', array_keys( $ids ) );
+                $svc_rows  = TPP_DB::get_results( "SELECT * FROM {$svc_table} WHERE id IN ({$in}) LIMIT 5000", array() );
+
+                /* جستجوی q — شناسه یا هر ستون اسکالر سرویس */
+                if ( '' !== $q_norm ) {
+                        $filtered = array();
+                        foreach ( (array) $svc_rows as $row ) {
+                                if ( (string) (int) $row['id'] === ltrim( $q_norm, '#' ) ) {
+                                        $filtered[] = $row;
+                                        continue;
+                                }
+                                $hit = false;
+                                foreach ( (array) $row as $v ) {
+                                        if ( is_string( $v ) && '' !== $v && false !== mb_stripos( TPP_Date::en_num( $v ), $q_norm ) ) {
+                                                $hit = true;
+                                                break;
+                                        }
+                                }
+                                if ( $hit ) {
+                                        $filtered[] = $row;
+                                }
+                        }
+                        $svc_rows = $filtered;
+                }
+
+                /* ترتیب: تعارض جدیدتر اول */
+                usort( $svc_rows, static function ( $a, $b ) use ( $ids ) {
+                        $ta = (string) ( $ids[ (int) $a['id'] ]['last_at'] ?? '' );
+                        $tb = (string) ( $ids[ (int) $b['id'] ]['last_at'] ?? '' );
+                        if ( $ta === $tb ) {
+                                return ( (int) $a['id'] < (int) $b['id'] ) ? 1 : -1;
+                        }
+                        return ( $ta < $tb ) ? 1 : -1;
+                } );
+
+                $per2      = (int) $base['per_page'];
+                $page2     = (int) $base['page'];
+                $total     = count( $svc_rows );
+                $pages     = (int) ceil( $total / $per2 );
+                $page_rows = array_slice( $svc_rows, ( $page2 - 1 ) * $per2, $per2 );
+                $page_ids  = array_map( static function ( $r ) { return (int) $r['id']; }, $page_rows );
+
+                $conf_rows = TPP_History::conflicts_for_services( $page_ids, $resolved );
+                $grouped   = array();
+                foreach ( (array) $conf_rows as $r ) {
+                        $grouped[ (int) $r['entity_id'] ][] = $r;
+                }
+
+                $groups = array();
+                foreach ( (array) $page_rows as $row ) {
+                        $sid = (int) $row['id'];
+                        $groups[] = array(
+                                'service_id'     => $sid,
+                                'service'        => $row,
+                                'conflicts'      => isset( $grouped[ $sid ] ) ? $grouped[ $sid ] : array(),
+                                'conflict_count' => isset( $grouped[ $sid ] ) ? count( $grouped[ $sid ] ) : 0,
+                        );
+                }
+
+                $base['total']    = $total;
+                $base['pages']    = $pages;
+                $base['groups']   = $groups;
+                return $base;
+        }
+
+        /**
+         * ۲.۱.۰ — حل تعارض‌های ثبت‌شده توسط مدیرکل.
+         *  - ack     : فقط بستن تعارض (وضعیت فعلی سرویس تأیید می‌شود)
+         *  - revert  : بازگردانی «مقادیر قبل از تعارض» (همان سازوکار بازگردانی تاریخچه) و سپس بستن
+         *  - correct : اعمال مقادیر اصلاحی دستی (values: slug => مقدار) و سپس بستن
+         * هر تغییر با source «conflict_fix» در تاریخچه ثبت می‌شود؛ ویرایش با force انجام می‌شود
+         * تا خودِ عملیات اصلاح، تعارض جدیدی ثبت نکند.
+         */
+        public function resolve_conflicts( array $ids, $mode, $values = array(), $user_id = 0 ) {
+                $user_id = (int) ( $user_id ?: get_current_user_id() );
+                $rows    = TPP_History::conflicts_for_ids( $ids );
+                if ( empty( $rows ) ) {
+                        return new WP_Error( 'tpp_not_found', 'رکورد تعارضی با این شناسه‌ها یافت نشد.', array( 'status' => 404 ) );
+                }
+                $results      = array();
+                $resolved_ids = array();
+                foreach ( (array) $rows as $row ) {
+                        $hid = (int) $row['id'];
+                        $sid = (int) $row['entity_id'];
+                        $r   = array( 'id' => $hid, 'service_id' => $sid, 'mode' => (string) $mode, 'status' => 'applied' );
+                        if ( 'ack' === $mode ) {
+                                $resolved_ids[] = $hid;
+                        } elseif ( 'revert' === $mode ) {
+                                $payload = TPP_History::old_values_payload( $row );
+                                if ( empty( $payload ) ) {
+                                        $r['status'] = 'error';
+                                        $r['error']  = 'مقدار قدیمی قابل بازگردانی در این رکورد یافت نشد.';
+                                } else {
+                                        $upd = $this->update( $sid, array( 'service' => $payload ), array( 'user_id' => $user_id, 'source' => 'conflict_fix', 'force' => true ) );
+                                        if ( is_wp_error( $upd ) ) {
+                                                $r['status'] = 'error';
+                                                $r['error']  = $upd->get_error_message();
+                                        } else {
+                                                $r['version']   = (int) ( $upd['version'] ?? 0 );
+                                                $resolved_ids[] = $hid;
+                                        }
+                                }
+                        } else { // correct
+                                $payload = array();
+                                foreach ( (array) $values as $slug => $v ) {
+                                        if ( preg_match( '/^[a-z0-9_]{1,64}$/', (string) $slug ) ) {
+                                                $payload[ (string) $slug ] = $v;
+                                        }
+                                }
+                                if ( empty( $payload ) ) {
+                                        $r['status'] = 'error';
+                                        $r['error']  = 'مقداری برای اصلاح ارسال نشده است.';
+                                } else {
+                                        $upd = $this->update( $sid, array( 'service' => $payload ), array( 'user_id' => $user_id, 'source' => 'conflict_fix', 'force' => true ) );
+                                        if ( is_wp_error( $upd ) ) {
+                                                $r['status'] = 'error';
+                                                $r['error']  = $upd->get_error_message();
+                                        } else {
+                                                $r['version']   = (int) ( $upd['version'] ?? 0 );
+                                                $resolved_ids[] = $hid;
+                                        }
+                                }
+                        }
+                        $results[] = $r;
+                }
+                $closed = 0;
+                if ( ! empty( $resolved_ids ) ) {
+                        $closed = TPP_History::mark_resolved( $resolved_ids, $user_id );
+                }
+                $applied = count( array_filter( $results, static function ( $r ) { return 'applied' === $r['status']; } ) );
+                return array(
+                        'status'  => 'done',
+                        'results' => $results,
+                        'summary' => array(
+                                'total'   => count( $results ),
+                                'applied' => $applied,
+                                'error'   => count( $results ) - $applied,
+                                'closed'  => (int) $closed,
+                        ),
+                );
+        }
+
+        /**
          * ادغام گروهی همه گروه‌های «بدون تناقض» (۱.۱۱.۰).
          * گروه بدون تناقض = فیلدهای پر اعضا یا یکسان‌اند یا مکمل یکدیگر → ادغام بدون از دست رفتن هیچ داده‌ای.
          * $keys: کلیدهای گروه‌های خاص؛ خالی = همه گروه‌های بدون تناقض.

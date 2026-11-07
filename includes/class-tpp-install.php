@@ -97,6 +97,8 @@ class TPP_Install {
                         // ۱.۲۰.۰ — سجل بازبینی اقدامات نصاب‌ها + دسته ارجاع پیش‌فرض
                         TPP_Review::ensure_table();
                         TPP_Categories::seed_review_category();
+                        // ۲.۱.۰ — ستون‌های وضعیت بررسی تعارض تاریخچه (resolved/resolved_at/resolved_by)
+                        TPP_History::ensure_resolved_columns();
                         update_option( 'tpp_db_version', TPP_DB_VERSION, false );
                 }
         }
@@ -185,6 +187,9 @@ class TPP_Install {
                         source VARCHAR(20) NOT NULL DEFAULT 'online',
                         changes LONGTEXT NULL,
                         is_conflict TINYINT(1) NOT NULL DEFAULT 0,
+                        resolved TINYINT(1) NOT NULL DEFAULT 0,
+                        resolved_at DATETIME NULL,
+                        resolved_by BIGINT UNSIGNED NULL,
                         changed_at DATETIME NULL,
                         agg_day DATE NULL,
                         event_count INT UNSIGNED NOT NULL DEFAULT 0,
@@ -193,6 +198,7 @@ class TPP_Install {
                         KEY address_id (address_id),
                         KEY user_id (user_id),
                         KEY changed (changed_at),
+                        KEY conflict_res (is_conflict, resolved),
                         KEY agg_day (agg_day),
                         KEY entity_day (entity, entity_id, agg_day)
                 ) " . $charset . ';';

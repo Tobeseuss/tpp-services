@@ -1287,3 +1287,32 @@ select.btn.invalid { border-color: #e05252; box-shadow: 0 0 0 2px color-mix(in s
 @media (max-width: 640px) {
         .rev-row-title { flex-basis: 100%; }
 }
+
+/* ============ ۲.۱.۰ — داشبورد: تغییرات نسخه‌های اخیر (GitHub Releases) + بخش تعارض‌ها ============ */
+.stat-link { cursor: pointer; transition: transform .15s ease, box-shadow .15s ease; }
+.stat-link:hover { transform: translateY(-2px); box-shadow: 0 3px 10px color-mix(in srgb, var(--accent) 25%, transparent); }
+.changelog-box { max-height: 430px; overflow: auto; padding-left: 4px; }
+.rel-item { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; background: color-mix(in srgb, var(--bg) 60%, transparent); }
+.rel-item.current { border-color: var(--accent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent) inset; }
+.rel-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.rel-name { flex: 1 1 auto; }
+.rel-date { font-size: 12px; }
+.rel-link { font-size: 12px; text-decoration: none; white-space: nowrap; color: var(--accent); }
+.rel-body { font-size: 13px; line-height: 1.9; color: var(--text-soft); }
+.rel-body .md-h { font-weight: 700; color: var(--text); margin-top: 4px; }
+.rel-body .md-bullet { color: var(--accent); font-weight: 700; }
+.rel-body code { background: color-mix(in srgb, var(--bg) 70%, var(--border)); border-radius: 4px; padding: 0 4px; font-size: 12px; }
+.rel-tag { background: color-mix(in srgb, var(--accent) 15%, transparent); }
+.rel-stale { margin: 4px 0 0; }
+/* بخش تعارض‌های ثبت‌شده */
+.cf-card { margin-top: 10px; }
+.cf-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.cf-item { border: 1px dashed var(--border); border-radius: 10px; padding: 10px 12px; margin: 8px 0; }
+.cf-item.resolved { opacity: .72; border-style: solid; }
+.cf-changes table { width: 100%; border-collapse: collapse; }
+.cf-changes td { padding: 3px 6px; vertical-align: top; font-size: 13px; }
+.cf-edit { background: color-mix(in srgb, var(--bg) 70%, var(--border)); border-radius: 10px; padding: 10px 12px; margin-top: 8px; }
+@media (max-width: 640px) {
+        .rel-head { align-items: flex-start; }
+        .cf-actions .btn { flex-basis: 100%; }
+}

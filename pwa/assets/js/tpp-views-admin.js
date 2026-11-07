@@ -2264,7 +2264,9 @@ TPP.views = TPP.views || {};
          * بررسی موارد تکراری (۱.۹.۰) — فقط مدیر کل سایت
          * ============================================================ */
 
-        const dup = { fields: null, showDismissed: false, statusFilter: 'all', data: null };
+        const dup = { fields: null, showDismissed: false, statusFilter: 'all', data: null, tab: 'groups' };
+        /* ۲.۱.۰ — تعارض‌های ثبت‌شده (تاریخچه is_conflict) */
+        const dupC = { q: '', scope: 'unresolved', page: 1, data: null, unresolved: null };
 
         TPP.views.duplicates = async function () {
                 const st = TPP.app.state();
@@ -2276,8 +2278,10 @@ TPP.views = TPP.views || {};
                         document.getElementById('content').innerHTML = '<div class="card"><div class="alert warn">📴 بررسی موارد تکراری به اتصال اینترنت نیاز دارد. پس از اتصال دوباره وارد این صفحه شوید.</div></div>';
                         return;
                 }
-                document.getElementById('content').innerHTML = '<div class="loading-block"><div class="spinner"></div><p>در حال بررسی موارد تکراری…</p></div>';
-                await loadDuplicates();
+                document.getElementById('content').innerHTML = '<div class="loading-block"><div class="spinner"></div><p>در حال بررسی…</p></div>';
+                /* ۲.۱.۰ — دو تب: گروه‌های تکراری | تعارض‌های ثبت‌شده */
+                if (dup.tab === 'conflicts') await loadConflicts();
+                else await loadDuplicates();
         };
 
         async function loadDuplicates() {
@@ -2310,7 +2314,11 @@ TPP.views = TPP.views || {};
 
                 document.getElementById('content').innerHTML = `
                 <div class="card">
-                        <h3>👥 بررسی موارد تکراری و تناقض</h3>
+                        <h3>👥 بررسی موارد تکراری، تناقض و تعارض</h3>
+                        <div class="actions-row" style="margin-bottom:10px">
+                                <button class="btn btn-sm ${dup.tab !== 'conflicts' ? 'btn-primary' : ''}" data-dup-tab="groups">👥 گروه‌های تکراری</button>
+                                <button class="btn btn-sm ${dup.tab === 'conflicts' ? 'btn-primary' : ''}" data-dup-tab="conflicts">⚠️ تعارض‌های ثبت‌شده${(dupC.unresolved !== null && dupC.unresolved > 0) ? ' <span class="chip warn" style="margin-right:4px">' + dupC.unresolved.toLocaleString('fa-IR') + '</span>' : ''}</button>
+                        </div>
                         <p class="muted" style="line-height:2.1">
                                 سرویس‌هایی که در فیلدهای شناسایی مقدار <b>یکسان</b> دارند گروه می‌شوند و علاوه بر فیلدهای مشابه،
                                 <b>دلایل تناقض</b> (فیلدهایی که مقدار متفاوت معنادار دارند) و فیلدهای <b>مکمل</b> (فقط در برخی اعضا پر) هم نمایش داده می‌شود.
@@ -2349,6 +2357,13 @@ TPP.views = TPP.views || {};
                 </div>`;
 
                 // چیپ‌های انتخاب فیلد شناسایی
+                document.querySelectorAll('[data-dup-tab]').forEach((b) => b.addEventListener('click', () => {
+                        const t = b.getAttribute('data-dup-tab');
+                        if (dup.tab === t) return;
+                        dup.tab = t;
+                        if (t === 'conflicts') loadConflicts(); else loadDuplicates();
+                }));
+                loadConflictsBadge();
                 document.querySelectorAll('.dup-field-tgl').forEach((b) => b.addEventListener('click', () => {
                         const slug = b.getAttribute('data-slug');
                         const cur = dup.fields ? dup.fields.split(',').map((s) => s.trim()).filter(Boolean) : (dup.data ? dup.data.selected.slice() : []);
@@ -2392,6 +2407,267 @@ TPP.views = TPP.views || {};
                 });
 
                 bindDupGroupEvents();
+        }
+
+        /* ============ ۲.۱.۰ — تعارض‌های ثبت‌شده (تاریخچه is_conflict) ============ */
+
+        const faNumC = (n) => String(n == null ? '' : n).replace(/[0-9]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[+d]);
+
+        /** بج تعداد تعارض باز — پس از هر رندر به‌روز می‌شود (کم‌هزینه: per_page=1) */
+        async function loadConflictsBadge() {
+                if (!TPP.offline.state().online) return;
+                try {
+                        const res = await TPP.api.request('GET', 'duplicates/conflicts', null, { scope: 'unresolved', per_page: 1 });
+                        dupC.unresolved = (res && res.summary && res.summary.unresolved !== undefined) ? (parseInt(res.summary.unresolved, 10) || 0) : null;
+                } catch (e) { return; }
+                const el = document.querySelector('[data-dup-tab="conflicts"]');
+                if (el && dupC.unresolved !== null) {
+                        el.innerHTML = '⚠️ تعارض‌های ثبت‌شده' + (dupC.unresolved > 0 ? ' <span class="chip warn" style="margin-right:4px">' + faNumC(dupC.unresolved) + '</span>' : '');
+                }
+        }
+
+        async function loadConflicts() {
+                const area = document.getElementById('content');
+                area.innerHTML = '<div class="loading-block"><div class="spinner"></div><p>در حال دریافت تعارض‌های ثبت‌شده…</p></div>';
+                const params = { scope: dupC.scope, page: dupC.page, per_page: 20 };
+                if (dupC.q) params.q = dupC.q;
+                let data;
+                try {
+                        data = await TPP.api.request('GET', 'duplicates/conflicts', null, params);
+                } catch (e) {
+                        area.innerHTML = '<div class="card"><div class="alert err">خطا در دریافت تعارض‌ها: ' + esc(e.message) + '</div></div>';
+                        return;
+                }
+                dupC.data = data;
+                dupC.unresolved = (data && data.summary && data.summary.unresolved !== undefined) ? (parseInt(data.summary.unresolved, 10) || 0) : dupC.unresolved;
+                renderConflicts(data);
+        }
+
+        /** جدول تغییرات یک رکورد تعارض (سازگار با فرمت تجمیعی ۲) — مشابه رندر تاریخچه */
+        function dupChangesHtml(changes) {
+                if (!changes) return '<span class="muted">بدون جزئیات</span>';
+                const row = (slug, pair) => {
+                        const p = (pair && typeof pair === 'object') ? pair : {};
+                        const oldV = (p.old === null || p.old === undefined || p.old === '') ? '—' : p.old;
+                        const newV = (p.new === null || p.new === undefined || p.new === '') ? '—' : p.new;
+                        return `<tr><td style="width:170px">${esc(TPP.app.fieldLabel(slug))}</td><td><span class="old-val">${esc(String(oldV))}</span><span class="arrow">→</span><span class="new-val">${esc(String(newV))}</span></td></tr>`;
+                };
+                if (changes.fmt === 2 && Array.isArray(changes.events)) {
+                        if (!changes.events.length) return '<span class="muted">بدون جزئیات</span>';
+                        const acts = { create: 'ثبت', update: 'ویرایش', import: 'ایمپورت', delete: 'حذف', restore: 'بازگردانی', sync: 'همگام‌سازی', merge: 'ادغام' };
+                        return changes.events.map((ev) => {
+                                const c = ev.c || {};
+                                const items = Object.entries(c).map(([slug, pair]) => row(slug, pair)).join('');
+                                return `<div class="ev-item"><div class="ev-head"><span class="ev-time">${esc(String(ev.t || '').slice(0, 5))}</span><span class="chip">${esc(acts[ev.a] || ev.a || '')}</span>${ev.y === 'address' ? '<span class="chip">آدرس</span>' : ''}${ev.s === 'offline' ? '<span class="chip">آفلاین</span>' : ''}</div>${items ? '<table>' + items + '</table>' : '<span class="muted">بدون تغییر فیلد</span>'}</div>`;
+                        }).join('');
+                }
+                const items = Object.entries(changes).map(([slug, pair]) => row(slug, pair)).join('');
+                return items ? '<table>' + items + '</table>' : '<span class="muted">بدون جزئیات</span>';
+        }
+
+        /** خلاصه سرویس از ردیف خام — چند فیلد متنی اول غیرخالی f_* */
+        function confSvcTitle(row) {
+                if (!row) return '';
+                const bits = [];
+                const seen = ['f_phone', 'f_name', 'f_center_name', 'f_serial_modem'];
+                for (const slug of seen) {
+                        const v = row[slug];
+                        if (v !== undefined && v !== null && String(v).trim() && String(v).trim() !== '0') {
+                                bits.push(esc(TPP.app.fieldLabel(slug)) + ': <b>' + esc(String(v)) + '</b>');
+                        }
+                        if (bits.length >= 2) break;
+                }
+                return bits.join(' — ');
+        }
+
+        function renderConflicts(data) {
+                const fieldLabel = TPP.app.fieldLabel;
+                const groups = data.groups || [];
+                const sum = data.summary || {};
+                const scope = dupC.scope;
+
+                document.getElementById('content').innerHTML = `
+                <div class="card">
+                        <h3>👥 بررسی موارد تکراری، تناقض و تعارض</h3>
+                        <div class="actions-row" style="margin-bottom:10px">
+                                <button class="btn btn-sm ${dup.tab !== 'conflicts' ? 'btn-primary' : ''}" data-dup-tab="groups">👥 گروه‌های تکراری</button>
+                                <button class="btn btn-sm ${dup.tab === 'conflicts' ? 'btn-primary' : ''}" data-dup-tab="conflicts">⚠️ تعارض‌های ثبت‌شده${(dupC.unresolved !== null && dupC.unresolved > 0) ? ' <span class="chip warn" style="margin-right:4px">' + faNumC(dupC.unresolved) + '</span>' : ''}</button>
+                        </div>
+                        <p class="muted" style="line-height:2.1">
+                                <b>تعارض ثبت‌شده</b> یعنی یک ویرایش روی نسخه قدیمی سرویس اعمال شده (ویرایش همزمان دو نفر یا همگام‌سازی آفلاین با نسخه قدیمی).
+                                مقدارِ ویرایش جدید روی سرویس اعمال شده اما رکوردش با نشان تعارض در تاریخچه ثبت می‌شود — این‌جا می‌توانید همه تعارض‌ها را بررسی و حل کنید:
+                                <b>✅ بستن</b> (تأیید وضعیت فعلی)، <b>↩ بازگردانی مقادیر قبل از تعارض</b> یا <b>✏ اصلاح دستی</b> مقادیر.
+                        </p>
+                        <div class="dup-summary" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">
+                                <span class="chip warn">⚠️ ${faNumC(sum.unresolved || 0)} تعارض باز</span>
+                                <span class="chip ok">✅ ${faNumC(sum.resolved || 0)} بسته‌شده</span>
+                                <span class="chip">Σ مجموع: ${faNumC(sum.total || 0)} رکورد تعارض</span>
+                        </div>
+                        <div class="actions-row" style="margin-top:12px;flex-wrap:wrap">
+                                <div class="tpp-combo" style="flex:1 1 220px;max-width:420px">
+                                        <input type="text" class="combo-input" id="cf-q" value="${esc(dupC.q)}" placeholder="جستجوی سرویس‌های دارای تعارض (شناسه، تلفن، نام، آدرس…)" autocomplete="off">
+                                        <button type="button" class="combo-clear${dupC.q ? '' : ' hidden'}" id="cf-q-clear" tabindex="-1" title="پاک‌کردن جستجو">✕</button>
+                                </div>
+                                <button class="btn btn-sm ${scope === 'unresolved' ? 'btn-primary' : ''}" data-cf-scope="unresolved">فقط باز</button>
+                                <button class="btn btn-sm ${scope === 'all' ? 'btn-primary' : ''}" data-cf-scope="all">همه (باز + بسته‌شده)</button>
+                                <button class="btn" id="cf-refresh">🔄 بروزرسانی</button>
+                        </div>
+                </div>
+                <div id="cf-list">
+                        ${groups.length ? groups.map((g) => confGroupHtml(g, fieldLabel)).join('') : `
+                        <div class="card"><div class="empty-state"><div class="big">✅</div><p>${scope === 'unresolved' ? 'هیچ تعارض بازی برای بررسی نیست — همه تعارض‌ها بسته شده‌اند.' : 'هیچ رکورد تعارضی یافت نشد.'}</p></div></div>`}
+                </div>
+                ${(data.pages > 1) ? `<div class="card"><div class="actions-row" style="justify-content:center">
+                        <button class="btn btn-sm" id="cf-prev" ${data.page <= 1 ? 'disabled' : ''}>→ صفحه قبل</button>
+                        <span class="muted">صفحه ${faNumC(data.page)} از ${faNumC(data.pages)} — ${faNumC(data.total)} سرویس دارای تعارض</span>
+                        <button class="btn btn-sm" id="cf-next" ${data.page >= data.pages ? 'disabled' : ''}>صفحه بعد ←</button>
+                </div></div>` : ''}`;
+
+                document.querySelectorAll('[data-dup-tab]').forEach((b) => b.addEventListener('click', () => {
+                        const t = b.getAttribute('data-dup-tab');
+                        if (dup.tab === t) return;
+                        dup.tab = t;
+                        if (t === 'conflicts') loadConflicts(); else loadDuplicates();
+                }));
+                const qEl = document.getElementById('cf-q');
+                let cfTimer = null;
+                qEl.addEventListener('input', () => {
+                        if (cfTimer) clearTimeout(cfTimer);
+                        cfTimer = setTimeout(() => {
+                                dupC.q = qEl.value.trim();
+                                dupC.page = 1;
+                                document.getElementById('cf-q-clear').classList.toggle('hidden', !dupC.q);
+                                loadConflicts();
+                        }, 350);
+                });
+                document.getElementById('cf-q-clear').addEventListener('click', () => {
+                        dupC.q = ''; dupC.page = 1; loadConflicts();
+                });
+                document.querySelectorAll('[data-cf-scope]').forEach((b) => b.addEventListener('click', () => {
+                        dupC.scope = b.getAttribute('data-cf-scope');
+                        dupC.page = 1;
+                        loadConflicts();
+                }));
+                document.getElementById('cf-refresh').addEventListener('click', loadConflicts);
+                const prev = document.getElementById('cf-prev');
+                if (prev) prev.addEventListener('click', () => { dupC.page = Math.max(1, (parseInt(data.page, 10) || 1) - 1); loadConflicts(); });
+                const next = document.getElementById('cf-next');
+                if (next) next.addEventListener('click', () => { dupC.page = (parseInt(data.page, 10) || 1) + 1; loadConflicts(); });
+
+                bindConflicts();
+        }
+
+        function confGroupHtml(g, fieldLabel) {
+                const row = g.service || {};
+                const conflicts = g.conflicts || [];
+                const title = confSvcTitle(row);
+                return `
+                <div class="card cf-card">
+                        <div class="cf-head">
+                                <b>🛠 سرویس #${faNumC(g.service_id)}</b>
+                                ${title ? '<span class="muted">' + title + '</span>' : ''}
+                                <span class="chip warn">${faNumC(g.conflict_count)} تعارض</span>
+                                <button class="btn btn-sm" data-cf-open="${g.service_id}" title="بازکردن ویرایش کامل سرویس">✏ ویرایش سرویس</button>
+                        </div>
+                        ${conflicts.map((h) => confRowHtml(h, row)).join('')}
+                </div>`;
+        }
+
+        function confRowHtml(h, svcRow) {
+                const resolved = !!h.resolved;
+                const slugs = confSlugsOf(h.changes);
+                return `
+                <div class="cf-item${resolved ? ' resolved' : ''}" data-cf-id="${h.id}">
+                        <div class="tl-meta">
+                                ${resolved ? '<span class="chip ok">✅ بسته‌شده' + (h.resolved_by_name ? ' — ' + esc(h.resolved_by_name) + (h.resolved_at ? ' — ' + esc(fmtDate(h.resolved_at)) : '') : '') + '</span>' : '<span class="chip warn">⚠️ باز</span>'}
+                                <span class="chip">${esc(h.user_name || '—')}</span>
+                                <span class="chip">${esc(fmtDate(h.changed_at))}</span>
+                                ${h.source === 'offline' ? '<span class="chip">آفلاین</span>' : ''}
+                                <span class="muted">بازبینی ${faNumC(h.revision)}</span>
+                        </div>
+                        <div class="cf-changes">${dupChangesHtml(h.changes)}</div>
+                        ${resolved ? '' : `
+                        <div class="actions-row cf-actions" style="flex-wrap:wrap">
+                                <button class="btn btn-sm btn-primary" data-cf-ack="${h.id}" title="وضعیت فعلی سرویس درست است — تعارض بسته شود">✅ بستن (تأیید وضعیت فعلی)</button>
+                                <button class="btn btn-sm" data-cf-revert="${h.id}" title="مقادیر قبل از این تعارض به سرویس اعمال شود">↩ بازگردانی مقادیر قبل از تعارض</button>
+                                ${slugs.length ? '<button class="btn btn-sm" data-cf-edit="' + h.id + '">✏ اصلاح دستی مقادیر</button>' : ''}
+                        </div>
+                        ${slugs.length ? `<div class="cf-edit hidden" id="cf-edit-${h.id}">
+                                <p class="muted" style="margin:6px 0">مقدار درست هر فیلد را وارد و ذخیره کنید (خالی = بدون تغییر):</p>
+                                ${slugs.map((s) => `
+                                        <div class="field" style="margin:6px 0">
+                                                <label>${esc(TPP.app.fieldLabel(s))}</label>
+                                                <input type="text" data-cf-val="${esc(s)}" value="${esc(String(svcRow[s] !== undefined && svcRow[s] !== null ? svcRow[s] : ''))}">
+                                        </div>`).join('')}
+                                <div class="actions-row"><button class="btn btn-sm btn-primary" data-cf-save="${h.id}">💾 ذخیره اصلاح و بستن تعارض</button></div>
+                        </div>` : ''}
+                        <div class="muted" style="font-size:12px;margin-top:6px">تغییر این عملیات با برچسب «اصلاح تعارض» در تاریخچه ثبت می‌شود.</div>`}
+                </div>`;
+        }
+
+        /** فهرست slugهای تغییرکرده یک رکورد (سازگار با fmt2) */
+        function confSlugsOf(changes) {
+                const out = new Set();
+                if (!changes) return [];
+                const addAll = (c) => Object.keys(c || {}).forEach((s) => out.add(s));
+                if (changes.fmt === 2 && Array.isArray(changes.events)) {
+                        for (const ev of changes.events) {
+                                if (ev.y === 'address' || ev.a === 'create') continue;
+                                addAll(ev.c);
+                        }
+                } else addAll(changes);
+                return Array.from(out);
+        }
+
+        function bindConflicts() {
+                document.querySelectorAll('[data-cf-open]').forEach((b) => b.addEventListener('click', () => go('service/' + b.getAttribute('data-cf-open'))));
+                document.querySelectorAll('[data-cf-ack]').forEach((b) => b.addEventListener('click', async () => {
+                        b.disabled = true;
+                        try { await resolveConflicts([parseInt(b.getAttribute('data-cf-ack'), 10)], 'ack'); } finally { b.disabled = false; }
+                }));
+                document.querySelectorAll('[data-cf-revert]').forEach((b) => b.addEventListener('click', async () => {
+                        if (!await confirmBox('مقادیر «قبل از این تعارض» به سرویس اعمال شود؟<br><span class="muted">مقدار فعلی هر فیلد تغییرکرده با مقدار قدیمی جایگزین می‌شود و تغییر در تاریخچه ثبت می‌گردد.</span>', 'بازگردانی مقادیر قبل از تعارض')) return;
+                        b.disabled = true;
+                        try { await resolveConflicts([parseInt(b.getAttribute('data-cf-revert'), 10)], 'revert'); } finally { b.disabled = false; }
+                }));
+                document.querySelectorAll('[data-cf-edit]').forEach((b) => b.addEventListener('click', () => {
+                        const id = b.getAttribute('data-cf-edit');
+                        const box = document.getElementById('cf-edit-' + id);
+                        if (box) box.classList.toggle('hidden');
+                }));
+                document.querySelectorAll('[data-cf-save]').forEach((b) => b.addEventListener('click', async () => {
+                        const id = parseInt(b.getAttribute('data-cf-save'), 10);
+                        const box = document.getElementById('cf-edit-' + id);
+                        if (!box) return;
+                        const values = {};
+                        let has = false;
+                        box.querySelectorAll('input[data-cf-val]').forEach((inp) => {
+                                const v = inp.value.trim();
+                                if (v !== '' && v !== inp.defaultValue) { values[inp.getAttribute('data-cf-val')] = v; has = true; }
+                        });
+                        if (!has) { toast('مقداری برای اصلاح وارد نشده است.', 'warn'); return; }
+                        b.disabled = true;
+                        try { await resolveConflicts([id], 'correct', values); } finally { b.disabled = false; }
+                }));
+        }
+
+        async function resolveConflicts(ids, mode, values) {
+                const body = { ids: ids, mode: mode };
+                if (values) body.values = values;
+                let res;
+                try {
+                        res = await TPP.api.request('POST', 'duplicates/conflicts/resolve', body);
+                } catch (e) {
+                        toast('خطا در حل تعارض: ' + esc(e.message), 'error');
+                        return;
+                }
+                const s = (res && res.summary) || {};
+                const bits = [faNumC(s.applied || 0) + ' عملیات انجام شد', faNumC(s.closed || 0) + ' تعارض بسته شد'];
+                if (s.error) bits.push('⚠️ ' + faNumC(s.error) + ' خطا');
+                (res.results || []).forEach((r) => { if (r.error) bits.push('رکورد ' + r.id + ': ' + r.error); });
+                toast(bits.join(' — '), s.error ? 'warn' : 'success');
+                loadConflicts();
+                loadConflictsBadge();
         }
 
         function dupConflictHtml(g) {
@@ -2612,6 +2888,14 @@ TPP.views = TPP.views || {};
                         TPP.offline.refreshPendingBadge();
                         TPP.views.outbox();
                 }));
+        };
+
+        /* ۲.۱.۰ — API عمومی ماژول مدیریت: بازکردن مستقیم تب «تعارض‌های ثبت‌شده» از داشبورد */
+        TPP.adminUi = {
+                openConflicts() {
+                        dup.tab = 'conflicts';
+                        go('duplicates');
+                },
         };
 
 })();

@@ -183,6 +183,16 @@ class TPP_Rest {
                         'duplicates/merge_safe'    => array( 'POST' => array( 'perm' => 'perm_admin', 'cb' => 'duplicates_merge_safe' ) ),
                         'duplicates/dismiss'       => array( 'POST' => array( 'perm' => 'perm_admin', 'cb' => 'duplicates_dismiss' ) ),
                         'duplicates/restore'       => array( 'POST' => array( 'perm' => 'perm_admin', 'cb' => 'duplicates_restore' ) ),
+                        /* ۲.۱.۰ — تعارض‌های ثبت‌شده (تاریخچه is_conflict) — فقط مدیر کل */
+                        'duplicates/conflicts'         => array( 'GET' => array( 'perm' => 'perm_admin', 'cb' => 'duplicates_conflicts', 'args' => array(
+                                'q'        => array( 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ),
+                                'scope'    => array( 'type' => 'string', 'sanitize_callback' => 'sanitize_key' ),
+                                'page'     => array( 'type' => 'integer', 'default' => 1 ),
+                                'per_page' => array( 'type' => 'integer', 'default' => 20 ),
+                        ) ) ),
+                        'duplicates/conflicts/resolve' => array( 'POST' => array( 'perm' => 'perm_admin', 'cb' => 'duplicates_conflicts_resolve' ) ),
+                        /* ۲.۱.۰ — تغییرات نسخه‌های اخیر از GitHub Releases (داشبورد) */
+                        'about/changelog'          => array( 'GET' => array( 'perm' => 'perm_access', 'cb' => 'changelog' ) ),
 
                         /* --- تاریخچه --- */
                         'history'                  => array( 'GET' => array( 'perm' => 'perm_history', 'cb' => 'history' ) ),
@@ -1437,6 +1447,150 @@ class TPP_Rest {
                 return self::ok( array( 'status' => 'restored', 'restored' => (int) $result ) );
         }
 
+        /** GET duplicates/conflicts?q=…&scope=unresolved|all&page=… — ۲.۱.۰: سرویس‌های دارای تعارض ثبت‌شده */
+        public function duplicates_conflicts( WP_REST_Request $request ) {
+                $scope   = sanitize_key( (string) $request->get_param( 'scope' ) );
+                $resolved = ( 'all' === $scope ) ? '' : 0; // پیش‌فرض: فقط باز
+                $result  = tpp()->services()->find_conflicts(
+                        array( 'q' => (string) $request->get_param( 'q' ), 'resolved' => $resolved ),
+                        max( 1, (int) $request->get_param( 'page' ) ),
+                        (int) $request->get_param( 'per_page' )
+                );
+                $visible = TPP_Capabilities::visible_fields( get_current_user_id() );
+                foreach ( $result['groups'] as &$g ) {
+                        foreach ( $g['conflicts'] as &$h ) {
+                                $h['changes'] = TPP_History::filter_changes( $h['changes'], $visible );
+                        }
+                        unset( $h );
+                }
+                unset( $g );
+                return self::ok( $result );
+        }
+
+        /** POST duplicates/conflicts/resolve — {ids:[…], mode: ack|revert|correct, values:{slug:value}} — ۲.۱.۰ */
+        public function duplicates_conflicts_resolve( WP_REST_Request $request ) {
+                $body = (array) $request->get_json_params();
+                if ( empty( $body ) ) {
+                        $body = $request->get_params();
+                }
+                $ids  = isset( $body['ids'] ) && is_array( $body['ids'] ) ? array_map( 'intval', $body['ids'] ) : array();
+                $mode = sanitize_key( (string) ( $body['mode'] ?? 'ack' ) );
+                if ( empty( $ids ) ) {
+                        return self::err( 'tpp_no_ids', 'شناسه تعارضی ارسال نشده است.', 400 );
+                }
+                if ( ! in_array( $mode, array( 'ack', 'revert', 'correct' ), true ) ) {
+                        return self::err( 'tpp_bad_mode', 'حالت حل تعارض نامعتبر است (ack|revert|correct).', 400 );
+                }
+                $values = array();
+                if ( 'correct' === $mode && isset( $body['values'] ) && is_array( $body['values'] ) ) {
+                        foreach ( $body['values'] as $slug => $v ) {
+                                if ( preg_match( '/^[a-z0-9_]{1,64}$/', (string) $slug ) ) {
+                                        $values[ (string) $slug ] = is_scalar( $v ) ? (string) $v : '';
+                                }
+                        }
+                }
+                $result = tpp()->services()->resolve_conflicts( $ids, $mode, $values, get_current_user_id() );
+                if ( is_wp_error( $result ) ) {
+                        $data   = $result->get_error_data();
+                        $status = is_array( $data ) && isset( $data['status'] ) ? (int) $data['status'] : 400;
+                        return self::err( $result->get_error_code(), $result->get_error_message(), $status );
+                }
+                return self::ok( $result );
+        }
+
+        /* -------------------- هندلرها: تغییرات نسخه‌ها (۲.۱.۰ — داشبورد) -------------------- */
+
+        /**
+         * GET about/changelog — تغییرات نسخه‌های اخیر افزونه از GitHub Releases.
+         * منبع حقیقت: یادداشت‌های Release گیتهاب (هاردکد ممنوع — اصل اساسی پروژه).
+         * کش سرور ۶ ساعت + «آخرین پاسخ موفق» برای نبود دسترسی به گیت‌هاب.
+         */
+        public function changelog( WP_REST_Request $request ) {
+                $cached = get_transient( 'tpp_changelog_v1' );
+                if ( is_array( $cached ) && ! empty( $cached['releases'] ) ) {
+                        return self::ok( $cached );
+                }
+                $fetch = self::github_fetch_releases();
+                if ( is_wp_error( $fetch ) ) {
+                        $last = get_option( 'tpp_changelog_last' );
+                        if ( is_array( $last ) && ! empty( $last['releases'] ) ) {
+                                $last['source'] = 'cache';
+                                return self::ok( $last );
+                        }
+                        return self::ok( array(
+                                'releases'        => array(),
+                                'source'          => 'none',
+                                'fetched_at'      => '',
+                                'current_version' => (string) TPP_VERSION,
+                                'error'           => $fetch->get_error_message(),
+                        ) );
+                }
+                set_transient( 'tpp_changelog_v1', $fetch, 6 * HOUR_IN_SECONDS );
+                update_option( 'tpp_changelog_last', $fetch, false );
+                return self::ok( $fetch );
+        }
+
+        /** دریافت Releases گیت‌هاب (۵ نسخه آخر) — با تلاش مجدد روی خطای SSL (الگوی پیامک) */
+        private static function github_fetch_releases() {
+                if ( ! defined( 'TPP_GITHUB_REPO' ) ) {
+                        return new WP_Error( 'tpp_no_repo', 'مخزن گیت‌هاب تنظیم نشده است.' );
+                }
+                $url  = 'https://api.github.com/repos/' . TPP_GITHUB_REPO . '/releases?per_page=8';
+                $args = array(
+                        'timeout'   => 10,
+                        'headers'   => array(
+                                'Accept'     => 'application/vnd.github+json',
+                                'User-Agent' => 'tpp-services-plugin/' . TPP_VERSION,
+                        ),
+                        'sslverify' => true,
+                );
+                $res = wp_remote_get( $url, $args );
+                if ( is_wp_error( $res ) && preg_match( '/curl|ssl|tls|certificat/i', $res->get_error_message() ) ) {
+                        $args['sslverify'] = false;
+                        $res = wp_remote_get( $url, $args );
+                }
+                if ( is_wp_error( $res ) ) {
+                        return $res;
+                }
+                $code = (int) wp_remote_retrieve_response_code( $res );
+                if ( 200 !== $code ) {
+                        return new WP_Error( 'tpp_github_http', 'پاسخ گیت‌هاب: کد ' . $code );
+                }
+                $data = json_decode( wp_remote_retrieve_body( $res ), true );
+                if ( ! is_array( $data ) ) {
+                        return new WP_Error( 'tpp_github_json', 'پاسخ نامعتبر از گیت‌هاب.' );
+                }
+                $releases = array();
+                foreach ( $data as $r ) {
+                        if ( ! is_array( $r ) || empty( $r['tag_name'] ) || ! empty( $r['draft'] ) ) {
+                                continue;
+                        }
+                        $tag  = (string) $r['tag_name'];
+                        $norm = ltrim( $tag, 'vV' );
+                        $body = (string) ( $r['body'] ?? '' );
+                        if ( function_exists( 'mb_strlen' ) && mb_strlen( $body ) > 6000 ) {
+                                $body = mb_substr( $body, 0, 6000 ) . '…';
+                        }
+                        $releases[] = array(
+                                'tag'     => $norm,
+                                'name'    => (string) ( $r['name'] ?? '' ),
+                                'date'    => (string) ( $r['published_at'] ?? '' ),
+                                'url'     => (string) ( $r['html_url'] ?? '' ),
+                                'body'    => $body,
+                                'current' => ( $norm === (string) TPP_VERSION ),
+                        );
+                        if ( count( $releases ) >= 5 ) {
+                                break; // فقط ۵ نسخه آخر
+                        }
+                }
+                return array(
+                        'releases'        => $releases,
+                        'source'          => 'github',
+                        'fetched_at'      => gmdate( 'c' ),
+                        'current_version' => (string) TPP_VERSION,
+                );
+        }
+
         /* -------------------- هندلرها: تاریخچه -------------------- */
 
         public function history( WP_REST_Request $request ) {
@@ -2371,6 +2525,19 @@ class TPP_Rest {
                                 $ep( 'POST', 'duplicates/merge_safe', 'ادغام همه گروه‌های بدون تناقض', 'گروه‌هایی که هیچ فیلد متناقضی ندارند یک‌جا و بی‌خطر ادغام می‌شوند؛ keys اختیاری برای محدود کردن.', 'مدیر کل', array(), array( 'keys' => array( '12_45' ) ) ),
                                 $ep( 'POST', 'duplicates/dismiss', 'علامت «باقی می‌ماند»', 'گروه از فهرست بررسی خارج می‌شود.', 'مدیر کل', array(), array( 'ids' => array( 12, 45 ) ) ),
                                 $ep( 'POST', 'duplicates/restore', 'بازگردانی علامت‌خورده‌ها', 'key خاص یا all.', 'مدیر کل', array(), array( 'key' => 'all' ) ),
+                                /* ۲.۱.۰ — تعارض‌های ثبت‌شده */
+                                $ep( 'GET', 'duplicates/conflicts', 'تعارض‌های ثبت‌شده (۲.۱.۰)', 'سرویس‌های دارای رکورد تعارض تاریخچه (is_conflict=1 — ویرایش همزمان/همگام‌سازی آفلاین روی نسخه قدیمی). جستجوی q روی شناسه و همه فیلدهای سرویس؛ هر گروه: مشخصات سرویس + رکوردهای تعارض با جزئیات قدیم/جدید، کاربر، زمان و وضعیت باز/بسته‌شده.', 'مدیر کل', array(
+                                        $arg( 'q', 'string', 'جستجو (شناسه سرویس یا هر مقدار فیلد)' ),
+                                        $arg( 'scope', 'string', 'unresolved (پیش‌فرض) | all' ),
+                                        $arg( 'page', 'int', 'شماره صفحه' ),
+                                        $arg( 'per_page', 'int', 'تعداد در صفحه (پیش‌فرض ۲۰)' ),
+                                ) ),
+                                $ep( 'POST', 'duplicates/conflicts/resolve', 'حل تعارض ثبت‌شده (۲.۱.۰)', '{ids:[…], mode: ack|revert|correct, values:{slug:value}} — ack: بستن تعارض با تأیید وضعیت فعلی؛ revert: بازگردانی مقادیر قبل از تعارض؛ correct: اصلاح دستی مقادیر داده‌شده. پس از هر عملیات موفق، رکورد تعارض بسته می‌شود (resolved) و تغییر با source «conflict_fix» در تاریخچه ثبت می‌شود.', 'مدیر کل', array(), array( 'ids' => array( 34 ), 'mode' => 'ack' ) ),
+                        ) ),
+
+                        /* ۲.۱.۰ — تغییرات نسخه‌های اخیر (منبع: GitHub Releases) */
+                        array( 'title' => 'اطلاعات افزونه', 'items' => array(
+                                $ep( 'GET', 'about/changelog', 'تغییرات نسخه‌های اخیر', '۵ نسخه آخر از یادداشت‌های Release گیتهاب (repos/' . TPP_GITHUB_REPO . ') با کش سرور ۶ ساعته و حافظه «آخرین پاسخ موفق»؛ خروجی: {releases:[{tag, name, date, url, body, current}], source, fetched_at, current_version} — نسخه جاری با current=true مشخص می‌شود. داشبورد اپ از این اندپوینت تغذیه می‌شود؛ هاردکد تغییرات ممنوع.', 'کاربر افزونه' ),
                         ) ),
 
                         array( 'title' => 'تاریخچه تغییرات', 'items' => array(
