@@ -1616,6 +1616,7 @@ TPP.views = TPP.views || {};
                 const st = TPP.app.state();
                 st.settings = Object.assign({}, st.settings, {
                         rows_per_page: parseInt(s.rows_per_page, 10) || st.settings.rows_per_page || 25,
+                        review_per_page: parseInt(s.review_per_page, 10) || st.settings.review_per_page || 10,
                         default_match: s.default_match_key || st.settings.default_match,
                         heartbeat_min: parseInt(s.heartbeat_minutes, 10) || st.settings.heartbeat_min || 5,
                         offline_cache_size: parseInt(s.offline_cache_size, 10) || st.settings.offline_cache_size || 5000
@@ -1670,6 +1671,11 @@ TPP.views = TPP.views || {};
                                 <div class="field">
                                         <label>تعداد ردیف در هر صفحه</label>
                                         <input type="number" id="st-rows" value="${s.rows_per_page}" min="5" max="200">
+                                </div>
+                                <div class="field">
+                                        <label>تعداد موارد بازبینی در هر صفحه</label>
+                                        <input type="number" id="st-review-rows" value="${s.review_per_page || 10}" min="3" max="100">
+                                        <div class="hint">برای صف «سرویس‌های ارجاعی» در بخش 🔁 بازبینی — هر سرویس پنل درجای تعیین دسته‌بندی دارد؛ این عدد تعداد ردیف‌های هر صفحه همان صف است (۳ تا ۱۰۰).</div>
                                 </div>
                                 <div class="field">
                                         <label>بازه پینگ حفظ نشست (دقیقه)</label>
@@ -2048,6 +2054,7 @@ TPP.views = TPP.views || {};
                                 session_mode: document.getElementById('st-session-mode').value,
                                 session_days: document.getElementById('st-session-days').value,
                                 rows_per_page: document.getElementById('st-rows').value,
+                                review_per_page: document.getElementById('st-review-rows').value,
                                 heartbeat_minutes: document.getElementById('st-heartbeat').value,
                                 offline_cache_size: document.getElementById('st-offline-size').value,
                                 import_max_rows: document.getElementById('st-imp-rows').value,

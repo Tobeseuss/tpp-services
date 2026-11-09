@@ -193,16 +193,23 @@ class TPP_Review {
          * صف سرویس‌های ارجاعی (دسته «ثبت جهت بازبینی»)
          * ------------------------------------------------------------------- */
 
-        /** فهرست سرویس‌های در انتظار بازبینی (دسته ارجاعی) — غنی‌شده با آدرس/ثبت‌کننده */
-        public static function queue() {
+        /** فهرست سرویس‌های در انتظار بازبینی (دسته ارجاعی) — غنی‌شده با آدرس/ثبت‌کننده
+         *  ۲.۱.۳ — صفحه‌بندی: per_page از تنظیم «review_per_page» (قابل ویرایش در تنظیمات) + page */
+        public static function queue( $args = array() ) {
+                $per  = isset( $args['per_page'] ) ? max( 3, min( 100, (int) $args['per_page'] ) ) : max( 3, min( 100, (int) tpp()->settings()->get( 'review_per_page', 10 ) ) );
+                $page = isset( $args['page'] ) ? max( 1, (int) $args['page'] ) : 1;
                 $cat_id = TPP_Categories::review_category_id();
                 if ( $cat_id <= 0 ) {
-                        return array( 'category_id' => 0, 'items' => array(), 'total' => 0 );
+                        return array( 'category_id' => 0, 'items' => array(), 'total' => 0, 'page' => $page, 'pages' => 0, 'per_page' => $per );
                 }
-                $st = TPP_DB::table( 'services' );
+                $st    = TPP_DB::table( 'services' );
+                $total = (int) TPP_DB::get_var( "SELECT COUNT(*) FROM {$st} WHERE category_id = %d", array( $cat_id ) );
+                $pages = max( 1, (int) ceil( $total / $per ) );
+                $page  = min( $page, $pages );
+                $off   = ( $page - 1 ) * $per;
                 $rows = TPP_DB::get_results(
-                        "SELECT * FROM {$st} WHERE category_id = %d ORDER BY updated_at DESC, id DESC LIMIT 200",
-                        array( $cat_id )
+                        "SELECT * FROM {$st} WHERE category_id = %d ORDER BY updated_at DESC, id DESC LIMIT %d OFFSET %d",
+                        array( $cat_id, $per, $off )
                 );
                 $items = array();
                 foreach ( (array) $rows as $s ) {
@@ -226,7 +233,11 @@ class TPP_Review {
                         'category_id' => $cat_id,
                         'category_label' => TPP_Categories::label_of( $cat_id ),
                         'items'       => $items,
-                        'total'       => count( $items ),
+                        'total'       => $total,
+                        // ۲.۱.۳ — صفحه‌بندی
+                        'page'        => $page,
+                        'pages'       => $pages,
+                        'per_page'    => $per,
                 );
         }
 

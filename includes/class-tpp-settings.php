@@ -40,6 +40,8 @@ class TPP_Settings {
                         /* ۱.۲۱.۰ — تایید خودکار اقدامات نصاب‌ها پس از n روز (۰ = غیرفعال)؛
                          * سرویس‌های با دسته «ثبت جهت بازبینی…» از آن مستثنا هستند */
                         'review_auto_days'     => 7,
+                        /* ۲.۱.۳ — تعداد موارد صف بازبینی در هر صفحه (پنل درجا تعیین دسته‌بندی) */
+                        'review_per_page'      => 10,
                 );
         }
 
@@ -94,6 +96,10 @@ class TPP_Settings {
                         if ( isset( $in[ $k ] ) ) {
                                 $out[ $k ] = max( 1, (int) $in[ $k ] );
                         }
+                }
+                /* ۲.۱.۳ — تعداد موارد بازبینی در هر صفحه (۳ تا ۱۰۰) */
+                if ( isset( $in['review_per_page'] ) ) {
+                        $out['review_per_page'] = min( 100, max( 3, (int) $in['review_per_page'] ) );
                 }
                 if ( array_key_exists( 'session_days', $out ) ) {
                         $out['session_days'] = min( max( 1, (int) $out['session_days'] ), 3650 );

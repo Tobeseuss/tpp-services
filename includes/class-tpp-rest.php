@@ -108,6 +108,7 @@ class TPP_Rest {
                                 'default_match'     => (string) $settings->get( 'default_match_key', 'f_phone' ),
                                 'heartbeat_min'     => (int) $settings->get( 'heartbeat_minutes', 5 ),
                                 'offline_cache_size'=> (int) $settings->get( 'offline_cache_size', 5000 ),
+                                'review_per_page'   => (int) $settings->get( 'review_per_page', 10 ), // ۲.۱.۳
                         ),
                         'sms'      => array(
                                 'configured'    => tpp()->sms()->is_configured(),
@@ -1002,9 +1003,13 @@ class TPP_Rest {
 
         /* ------------------- 1.20.0 — بازبینی ------------------- */
 
-        /** GET review/queue — سرویس‌های ارجاع‌شده با دسته «ثبت جهت بازبینی» + دسته‌ها/تگ‌ها برای مودال تعیین دسته */
+        /** GET review/queue?page&per_page — سرویس‌های ارجاع‌شده با دسته «ثبت جهت بازبینی» + دسته‌ها/تگ‌ها — ۲.۱.۳: صفحه‌بندی (per_page پیش‌فرض از تنظیم review_per_page) */
         public function review_queue( WP_REST_Request $request ) {
-                $data = TPP_Review::queue();
+                // ۲.۱.۳ — صفحه‌بندی: page/per_page (per_page پیش‌فرض از تنظیم review_per_page)
+                $data = TPP_Review::queue( array(
+                        'page'     => (int) $request->get_param( 'page' ),
+                        'per_page' => (int) $request->get_param( 'per_page' ),
+                ) );
                 // فهرست دسته‌ها/تگ‌ها برای انتخاب بازبین (دسته ارجاعی هم موجود است)
                 $shape = static function ( $c ) {
                         return array( 'id' => (int) $c['id'], 'label' => (string) $c['label'], 'is_review' => ! empty( $c['is_review'] ) );
@@ -2269,6 +2274,8 @@ class TPP_Rest {
                         'auto_backup_keep'   => (int) $s->get( 'auto_backup_keep', 10 ),
                         /* ۱.۲۱.۰ — تایید خودکار اقدامات نصاب‌ها (۰ = غیرفعال) */
                         'review_auto_days'   => (int) $s->get( 'review_auto_days', 7 ),
+                        /* ۲.۱.۳ — تعداد موارد صف بازبینی در هر صفحه */
+                        'review_per_page'    => (int) $s->get( 'review_per_page', 10 ),
                 ) );
         }
 
