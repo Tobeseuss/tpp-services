@@ -1301,6 +1301,19 @@ select.btn.invalid { border-color: #e05252; box-shadow: 0 0 0 2px color-mix(in s
 .rev-assign .hint { margin: 0; }
 .rev-assign .combo-list { max-height: 240px; }
 
+/* ============ ۲.۲.۰ — ثبت دسته‌جمعی صف بازبینی ============ */
+/* نوار ثبت دسته‌جمعی: انتهای صفحه + هنگام اسکرول فهرست‌های طولانی چسبان دیده می‌شود */
+.rev-bulk-bar { position: sticky; bottom: 8px; z-index: 5; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin: 12px 0 4px; background: var(--panel, var(--bg)); box-shadow: 0 4px 16px rgba(0, 0, 0, .16); }
+.rev-bulk-bar > .muted { flex: 1 1 220px; }
+/* ردیفی که برایش دسته انتخاب شده ولی هنوز ذخیره نشده — قاب برجسته */
+.rev-row.rev-ready { border-color: var(--accent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent) inset; }
+/* ردیفی که همین حالا در ثبت دسته‌جمعی ذخیره شد */
+.rev-row.rev-done { opacity: .68; }
+@media (max-width: 640px) {
+        .rev-bulk-bar { bottom: 4px; }
+        .rev-bulk-bar .btn { flex: 1 1 auto; }
+}
+
 /* ============ ۲.۱.۰ — داشبورد: تغییرات نسخه‌های اخیر (GitHub Releases) + بخش تعارض‌ها ============ */
 .stat-link { cursor: pointer; transition: transform .15s ease, box-shadow .15s ease; }
 .stat-link:hover { transform: translateY(-2px); box-shadow: 0 3px 10px color-mix(in srgb, var(--accent) 25%, transparent); }

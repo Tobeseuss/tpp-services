@@ -36,8 +36,11 @@ TPP.views = TPP.views || {};
                 cats: null,
                 qpage: 1,           // ۲.۱.۳ — صفحه جاری صف بازبینی
                 qper: 10,           // ۲.۱.۳ — تعداد هر صفحه (از تنظیمات)
-                qcatLabel: ''       // ۲.۱.۳ — برچسب دسته ارجاعی
+                qcatLabel: '',      // ۲.۱.۳ — برچسب دسته ارجاعی
+                pending: {}         // ۲.۲.۰ — دسته‌های تعیین‌شدهٔ هنوز ذخیره‌نشده { [service_id]: {cat, label, tags} } — با رندر مجدد از دست نمی‌رود
         };
+
+        let bulkBusy = false; // ۲.۲.۰ — ثبت دسته‌جمعی در جریان است (قفل دکمه‌ها)
 
         const ACT = { create: 'ثبت سرویس', update: 'ویرایش', delete: 'حذف' };
         const SRC = { online: 'فرم', import: 'ایمپورت', bulk: 'تغییر گروهی', offline: 'همگام‌سازی آفلاین', api: 'API', review: 'بازبینی', revert: 'بازگردانی' };
@@ -96,6 +99,10 @@ TPP.views = TPP.views || {};
          * سرویس کلیه قابلیت‌ها در همان صفحه در دسترس باشد» → مودال حذف شد؛ هر ردیف
          * پنل درجای خودش را دارد: پیشنهاد هوشمند + کامبو آجاکسی + تگ‌ها + ثبت.
          * تعداد موارد هر صفحه از تنظیم «review_per_page» (⚙️ تنظیمات) می‌آید.
+         *
+         * ۲.۲.۰ — ثبت دسته‌جمعی: انتخاب دسته هر ردیف در حافظه (st.pending) ردگیری می‌شود؛
+         * پس از تعیین دسته همه موارد صفحه، دکمه «📥 ثبت دسته‌جمعی» در انتهای صفحه همه‌شان
+         * را پشت‌سرهم (ترتیبی) ذخیره می‌کند — ثبت تکی هر ردیف هم سر جایش است.
          * ============================================================ */
 
         let revDocClose = null; // شنونده بیرون‌کلیک کامبوها — با هر رندر جایگزین می‌شود
@@ -148,17 +155,38 @@ TPP.views = TPP.views || {};
                                 + '<div class="hint">تعداد موارد هر صفحه از «⚙️ تنظیمات ← تعداد موارد بازبینی در هر صفحه» قابل ویرایش است.</div>';
                 }
 
+                /* ۲.۲.۰ — نوار ثبت دسته‌جمعی (انتهای صفحه؛ هنگام اسکرول چسبان دیده می‌شود) */
+                const pageIds = {};
+                items.forEach((r) => { pageIds[String(r.id)] = true; });
+                const pendIds = Object.keys(st.pending);
+                const readyTotal = pendIds.length;
+                const otherPages = pendIds.filter((rid) => !pageIds[rid]).length;
+                const bulkHint = otherPages
+                        ? faNum(otherPages) + ' مورد از صفحات دیگر هم در فهرست ثبت دسته‌جمعی هست.'
+                        : 'پس از تعیین دسته برای ردیف‌ها، با یک کلیک همه‌شان ذخیره می‌شوند — لازم نیست ردیف‌به‌ردیف «ثبت» بزنید.';
+                const bulkBar = `
+                <div class="rev-bulk-bar" id="rev-bulk-bar">
+                        <span class="chip ok" id="rev-bulk-ready">✅ آماده ثبت: ${faNum(readyTotal)}</span>
+                        <button class="btn btn-primary" id="rev-bulk-save"${readyTotal ? '' : ' disabled'} title="همه سرویس‌هایی که برایشان دسته تعیین کرده‌اید یک‌جا ذخیره می‌شوند">📥 ثبت دسته‌جمعی (${faNum(readyTotal)})</button>
+                        <button class="btn" id="rev-bulk-clear"${readyTotal ? '' : ' disabled'} title="لغو همه دسته‌بندی‌های آماده ثبت">✖ لغو انتخاب‌ها</button>
+                        <span class="muted" id="rev-bulk-hint">${esc(bulkHint)}</span>
+                </div>`;
+
                 body.innerHTML = `
-                <div class="alert info">سرویس‌هایی که ثبت‌کننده برای‌شان دسته‌بندی مناسب پیدا نکرده و با دسته «${esc(q.category_label || 'ثبت جهت بازبینی')}» ارجاع شده‌اند — پنل تعیین دسته‌بندی هر سرویس همین‌جا باز است؛ بدون بازکردن پنجره جدید، دسته/تگ را انتخاب و ثبت کنید تا سرویس از صف خارج و ثبت نهایی شود.</div>
+                <div class="alert info">سرویس‌هایی که ثبت‌کننده برای‌شان دسته‌بندی مناسب پیدا نکرده و با دسته «${esc(q.category_label || 'ثبت جهت بازبینی')}» ارجاع شده‌اند — پنل تعیین دسته‌بندی هر سرویس همین‌جا باز است؛ دسته/تگ را برای هر ردیف تعیین کنید و بعد هر ردیف را جداگانه «ثبت» کنید یا همه را با «📥 ثبت دسته‌جمعی» در انتهای صفحه یک‌جا ذخیره کنید.</div>
                 <div class="actions-row">
                         <span class="chip ${q.total ? 'warn' : 'ok'}">${faNum(q.total)} سرویس در انتظار بازبینی</span>
+                        <span class="chip ok" id="rev-ready-top" style="display:none"></span>
                         <button class="btn" id="rq-refresh">🔄 به‌روزرسانی</button>
                 </div>
                 <div class="rev-list">${items.length ? items.map(queueRowHtml).join('') :
                         '<div class="empty-state" style="padding:16px"><p class="muted">صف خالی است — سرویسی در انتظار بازبینی نیست. ✅</p></div>'}</div>
-                ${pager}`;
+                ${pager}
+                ${bulkBar}`;
 
                 document.getElementById('rq-refresh').addEventListener('click', loadQueue);
+                document.getElementById('rev-bulk-save').addEventListener('click', bulkAssign);
+                document.getElementById('rev-bulk-clear').addEventListener('click', clearPendingAll);
                 body.querySelectorAll('[data-open]').forEach((b) => b.addEventListener('click', () => go('service/' + b.getAttribute('data-open'))));
                 body.querySelectorAll('[data-rqp]').forEach((b) => b.addEventListener('click', () => {
                         st.qpage = parseInt(b.getAttribute('data-rqp'), 10) || 1;
@@ -166,6 +194,7 @@ TPP.views = TPP.views || {};
                 }));
                 bindQueueRows(body);
                 loadRowSuggestions(body, items);
+                updateBulkBar();
         }
 
         /** ردیف صف + پنل درجا تعیین دسته/تگ (۲.۱.۳ — همه قابلیت‌های مودال قبلی، بدون پنجره جدید) */
@@ -220,6 +249,15 @@ TPP.views = TPP.views || {};
                                 clearBtn.classList.toggle('hidden', !id);
                                 saveBtn.disabled = !id;
                                 rowEl.querySelectorAll('.ra-sug').forEach((x) => x.classList.toggle('on', !!id && x.getAttribute('data-sid') === String(id)));
+                                /* ۲.۲.۰ — ردگیری انتخاب برای ثبت دسته‌جمعی (با رندر مجدد صفحه هم می‌ماند) */
+                                if (id) {
+                                        st.pending[rid] = { cat: id, label: input.value, tags: rowTags(rowEl) };
+                                        rowEl.classList.add('rev-ready');
+                                } else {
+                                        delete st.pending[rid];
+                                        rowEl.classList.remove('rev-ready');
+                                }
+                                updateBulkBar();
                         };
                         rowEl._setSelected = setSelected;
 
@@ -262,16 +300,19 @@ TPP.views = TPP.views || {};
 
                         rowEl.querySelectorAll('.rev-tags-row .tag-chip input').forEach((i) => i.addEventListener('change', () => {
                                 i.closest('.tag-chip').classList.toggle('on', i.checked);
+                                if (st.pending[rid]) st.pending[rid].tags = rowTags(rowEl); // ۲.۲.۰ — همگام‌سازی تگ‌های در انتظار
                         }));
 
                         saveBtn.addEventListener('click', async () => {
+                                if (bulkBusy) { toast('ثبت دسته‌جمعی در جریان است — چند لحظه صبر کنید.', 'warn'); return; } // ۲.۲.۰
                                 const cat = hidden.value;
                                 if (!cat) { toast('دسته‌بندی را انتخاب کنید (برای ماندن در صف، دسته «ثبت جهت بازبینی» را بگذارید).', 'warn'); return; }
-                                const tags = [];
-                                rowEl.querySelectorAll('.rev-tags-row .tag-chip.on').forEach((l) => tags.push(parseInt(l.getAttribute('data-tag'), 10)));
+                                const tags = rowTags(rowEl);
                                 saveBtn.disabled = true;
                                 try {
                                         await TPP.api.request('POST', 'review/assign', { service_id: parseInt(rid, 10), category: cat, tags: tags });
+                                        delete st.pending[rid]; // ۲.۲.۰ — از فهرست ثبت دسته‌جمعی خارج شود
+                                        updateBulkBar();
                                         toast('✅ دسته‌بندی سرویس #' + faNum(rid) + ' ثبت شد و از صف بازبینی خارج شد.', 'success', 5000);
                                         loadQueue();
                                 } catch (e) {
@@ -279,6 +320,8 @@ TPP.views = TPP.views || {};
                                         saveBtn.disabled = false;
                                 }
                         });
+
+                        applyPending(rowEl, rid); // ۲.۲.۰ — بازاعمال انتخاب‌های در انتظار پس از هر رندر
                 });
 
                 /* بیرون‌کلیک — بستن همه لیست‌های باز (با هر رندر جایگزین می‌شود) */
@@ -293,6 +336,104 @@ TPP.views = TPP.views || {};
                         });
                 };
                 document.addEventListener('click', revDocClose);
+        }
+
+        /* ============================================================
+         * ۲.۲.۰ — ثبت دسته‌جمعی صف بازبینی
+         * ============================================================ */
+
+        /** تگ‌های تیک‌خوردهٔ یک ردیف */
+        function rowTags(rowEl) {
+                const tags = [];
+                rowEl.querySelectorAll('.rev-tags-row .tag-chip.on').forEach((l) => tags.push(parseInt(l.getAttribute('data-tag'), 10)));
+                return tags;
+        }
+
+        /** بازاعمال انتخاب در انتظار روی ردیف تازه‌رندرشده (پس از هر بارگذاری صف) */
+        function applyPending(rowEl, rid) {
+                const p = st.pending[rid];
+                if (!p) return;
+                const input = rowEl.querySelector('.rev-cat-input');
+                const hidden = rowEl.querySelector('.rev-cat-id');
+                const clearBtn = rowEl.querySelector('.combo-clear');
+                const saveBtn = rowEl.querySelector('.rev-save');
+                if (hidden) hidden.value = String(p.cat);
+                if (input && p.label) input.value = p.label;
+                if (clearBtn) clearBtn.classList.remove('hidden');
+                if (saveBtn) saveBtn.disabled = false;
+                rowEl.classList.add('rev-ready');
+                rowEl.querySelectorAll('.ra-sug').forEach((x) => x.classList.toggle('on', x.getAttribute('data-sid') === String(p.cat)));
+                rowEl.querySelectorAll('.rev-tags-row .tag-chip').forEach((l) => {
+                        const cb = l.querySelector('input');
+                        if (cb) {
+                                cb.checked = (p.tags || []).indexOf(parseInt(l.getAttribute('data-tag'), 10)) !== -1;
+                                l.classList.toggle('on', cb.checked);
+                        }
+                });
+        }
+
+        /** به‌روزرسانی نوار ثبت دسته‌جمعی + چیپ بالای فهرست */
+        function updateBulkBar() {
+                const ready = document.getElementById('rev-bulk-ready');
+                const saveB = document.getElementById('rev-bulk-save');
+                const clearB = document.getElementById('rev-bulk-clear');
+                const top = document.getElementById('rev-ready-top');
+                const n = Object.keys(st.pending).length;
+                if (ready) ready.textContent = '✅ آماده ثبت: ' + faNum(n);
+                if (saveB && !bulkBusy) { saveB.disabled = !n; saveB.textContent = '📥 ثبت دسته‌جمعی (' + faNum(n) + ')'; }
+                if (clearB && !bulkBusy) clearB.disabled = !n;
+                if (top) {
+                        top.style.display = n ? '' : 'none';
+                        top.textContent = '📥 ' + faNum(n) + ' آماده ثبت دسته‌جمعی';
+                }
+        }
+
+        /** ثبت دسته‌جمعی — همه انتخاب‌های در انتظار به‌ترتیب ذخیره می‌شوند (هر ردیف = همان اندپوینت review/assign) */
+        async function bulkAssign() {
+                if (bulkBusy) return;
+                const rids = Object.keys(st.pending).map(Number).sort((a, b) => a - b);
+                if (!rids.length) { toast('ابتدا برای حداقل یک سرویس دسته‌بندی تعیین کنید.', 'warn'); return; }
+                if (!TPP.offline.state().online) { toast('📴 ثبت دسته‌جمعی به اتصال اینترنت نیاز دارد.', 'warn'); return; }
+                bulkBusy = true;
+                const root = document.getElementById('rev-body');
+                const saveB = document.getElementById('rev-bulk-save');
+                const clearB = document.getElementById('rev-bulk-clear');
+                const hint = document.getElementById('rev-bulk-hint');
+                if (root) root.querySelectorAll('.rev-save').forEach((b) => { b.disabled = true; });
+                if (clearB) clearB.disabled = true;
+                if (saveB) { saveB.disabled = true; saveB.textContent = '⏳ در حال ثبت…'; }
+                let ok = 0;
+                const failed = [];
+                for (let i = 0; i < rids.length; i++) {
+                        const rid = rids[i];
+                        const p = st.pending[rid];
+                        if (!p) continue;
+                        if (hint) hint.textContent = '⏳ در حال ثبت… ' + faNum(i + 1) + ' از ' + faNum(rids.length) + ' — سرویس #' + faNum(rid);
+                        try {
+                                await TPP.api.request('POST', 'review/assign', { service_id: rid, category: p.cat, tags: p.tags || [] });
+                                ok++;
+                                delete st.pending[rid];
+                                const rowEl = root && root.querySelector('.rev-row[data-rid="' + rid + '"]');
+                                if (rowEl) { rowEl.classList.remove('rev-ready'); rowEl.classList.add('rev-done'); }
+                        } catch (e) {
+                                failed.push({ id: rid, msg: e && e.message ? e.message : 'خطای نامشخص' });
+                        }
+                }
+                bulkBusy = false;
+                if (ok && !failed.length) toast('✅ ثبت دسته‌جمعی انجام شد: ' + faNum(ok) + ' سرویس ذخیره و از صف بازبینی خارج شد.', 'success', 8000);
+                else if (ok && failed.length) toast('✅ ' + faNum(ok) + ' سرویس ذخیره شد؛ ⚠ ' + faNum(failed.length) + ' مورد خطا داشت (' + failed.map((f) => '#' + faNum(f.id)).join('، ') + ') — انتخاب آن‌ها حفظ شد؛ دوباره «ثبت دسته‌جمعی» بزنید.', 'warn', 10000);
+                else toast('⚠ هیچ سرویسی ذخیره نشد — ' + (failed[0] ? '#' + faNum(failed[0].id) + ': ' + failed[0].msg : 'خطای نامشخص'), 'error', 9000);
+                loadQueue();
+        }
+
+        /** لغو همه انتخاب‌های در انتظار */
+        async function clearPendingAll() {
+                const n = Object.keys(st.pending).length;
+                if (!n) { toast('انتخابی برای لغو وجود ندارد.', 'warn'); return; }
+                if (!await confirmBox(faNum(n) + ' دسته‌بندی آماده ثبت لغو شود؟ (تغییری در سرویس‌ها ذخیره نمی‌شود)', 'لغو انتخاب‌ها')) return;
+                Object.keys(st.pending).forEach((k) => delete st.pending[k]);
+                toast('انتخاب‌ها لغو شد.', 'success');
+                loadQueue();
         }
 
         /** پیشنهاد هوشمند هر ردیف (review/suggest) — بارگذاری پلکانی (۱۵۰ms فاصله) برای جلوگیری از انفجار درخواست */
@@ -318,6 +459,8 @@ TPP.views = TPP.views || {};
                                         box.querySelectorAll('.ra-sug').forEach((b) => b.addEventListener('click', () => {
                                                 if (rowEl._setSelected) rowEl._setSelected(parseInt(b.getAttribute('data-sid'), 10) || 0, b.getAttribute('data-slabel') || '');
                                         }));
+                                        const p0 = st.pending[String(row.id)]; // ۲.۲.۰ — اگر دسته از قبل انتخاب شده، چیپ پیشنهادش روشن بماند
+                                        if (p0) box.querySelectorAll('.ra-sug').forEach((x) => x.classList.toggle('on', x.getAttribute('data-sid') === String(p0.cat)));
                                 } catch (e) {
                                         box.innerHTML = '<span class="muted">دریافت پیشنهادها ناموفق بود — دسته را با جستجوی آجاکسی انتخاب کنید.</span>';
                                 }
