@@ -587,6 +587,7 @@ class TPP_Import {
                 $report['tags_created']       = 0;
                 $report['tax_created_labels'] = array(); // [kind, label] تعریف‌های تازه‌ساخته‌شده
                 $report['tax_rows']           = 0;       // ردیف‌هایی که دسته یا تگ رویشان اعمال شد
+                $report['no_category']        = 0;       // ۲.۲.۱ — سرویس‌های جدیدِ بدون دسته (به صف بازبینی ارجاع نمی‌شوند)
                 $in_file  = array(); // مقدار کلید → ردیف (تشخیص تکراری داخل فایل)
                 $row_no   = 1;       // ردیف سرستون = ۱
 
@@ -759,6 +760,8 @@ class TPP_Import {
                                         );
                                         if ( ! empty( $tax_data['category'] ) ) {
                                                 $create_data['category'] = $tax_data['category']; // ۱.۱۹.۰ — دسته از اکسل
+                                        } else {
+                                                $report['no_category']++; // ۲.۲.۱ — بدون دسته ثبت می‌شود؛ با اولین ویرایشِ بدون دسته به بازبینی می‌رود
                                         }
                                         if ( ! empty( $tax_data['tags'] ) ) {
                                                 $create_data['tags'] = $tax_data['tags']; // ۱.۱۹.۰ — تگ‌ها از اکسل

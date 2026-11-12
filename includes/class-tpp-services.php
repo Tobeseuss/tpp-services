@@ -268,13 +268,16 @@ class TPP_Services {
                 // ۱.۲۱.۰ — پیش‌فرض سمت سرور: اگر دسته‌بندی ارسال نشده و دسته‌بندی تعریف شده است،
                 // سرویس جدید با دسته «ثبت جهت بازبینی و ویرایش یا تأیید مدیریت» ثبت می‌شود
                 // (همان پیش‌فرضی که در فرم اپ هم انتخاب است).
-                if ( ! isset( $cat_data['category_id'] ) && TPP_Categories::any_category_defined() ) {
+                // ۲.۲.۱ — استثنا (درخواست کاربر): سرویس‌های ایمپورت‌شده بدون دسته، بدون دسته می‌مانند و
+                // به صف بازبینی نمی‌روند — با اولین ویرایشی که در آن دسته انتخاب نشود، به بازبینی ارجاع می‌شوند.
+                if ( ! isset( $cat_data['category_id'] ) && TPP_Categories::any_category_defined() && 'import' !== $source ) {
                         $review_cat = TPP_Categories::review_category_id();
                         if ( $review_cat > 0 ) {
                                 $cat_data['category_id'] = $review_cat;
                         }
                 }
-                if ( ! $skip_required && TPP_Categories::any_category_defined() ) {
+                // ۲.۲.۱ — ایمپورت معاف از الزام دسته: ردیف بدون دسته با category_id = 0 ثبت می‌شود (نه دسته بازبینی)
+                if ( ! $skip_required && 'import' !== $source && TPP_Categories::any_category_defined() ) {
                         $cat_id = isset( $cat_data['category_id'] ) ? (int) $cat_data['category_id'] : 0;
                         if ( $cat_id <= 0 ) {
                                 return new WP_Error( 'tpp_required', 'فیلد الزامی «دسته‌بندی پروژه» خالی است — از فهرست دسته‌بندی‌های تعریف‌شده انتخاب کنید.' );
@@ -454,7 +457,23 @@ class TPP_Services {
                         // دسته ارسال شده: نتیجه نهایی نباید خالی باشد (فیلد اجباری در فرم مشاهده/ویرایش)
                         $effective = isset( $cat_data['category_id'] ) ? (int) $cat_data['category_id'] : (int) ( $service['category_id'] ?? 0 );
                         if ( $effective <= 0 ) {
-                                return new WP_Error( 'tpp_required', 'فیلد الزامی «دسته‌بندی پروژه» خالی است — از فهرست دسته‌بندی‌های تعریف‌شده انتخاب کنید.' );
+                                // ۲.۲.۱ — دسته انتخاب نشده: به‌جای رد شدن ویرایش، سرویس با دسته «ثبت جهت بازبینی»
+                                // به صف «سرویس‌های ارجاعی» بخش بازبینی می‌رود (درخواست کاربر — مخصوصاً سرویس‌های ایمپورت‌شده)
+                                $review_cat = TPP_Categories::review_category_id();
+                                $old_cat    = (int) ( $service['category_id'] ?? 0 );
+                                if ( $review_cat > 0 ) {
+                                        if ( $old_cat !== $review_cat ) {
+                                                $cat_data['category_id'] = $review_cat;
+                                                $old_label = $old_cat ? TPP_Categories::label_of( $old_cat ) : '';
+                                                $changes['_category'] = array( 'old' => ( $old_label ?: null ), 'new' => TPP_Categories::label_of( $review_cat ) );
+                                        } else {
+                                                // دسته فعلی همان دسته بازبینی است — تغییر واقعی در دسته نداریم
+                                                unset( $cat_data['category_id'] );
+                                                unset( $changes['_category'] );
+                                        }
+                                } else {
+                                        return new WP_Error( 'tpp_required', 'فیلد الزامی «دسته‌بندی پروژه» خالی است — از فهرست دسته‌بندی‌های تعریف‌شده انتخاب کنید.' );
+                                }
                         }
                 }
                 foreach ( $cat_data as $col => $val ) {

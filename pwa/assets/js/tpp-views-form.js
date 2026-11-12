@@ -348,7 +348,7 @@ TPP.views = TPP.views || {};
                                         </div>
                                         <input type="hidden" id="svc-category" value="${esc(String(defaultCatId || ''))}">
                                         <div id="svc-cat-selected" class="tag-chips" style="margin-top:6px"></div>` : (curCat ? `<div class="alert info">${esc((row.category && row.category.label) || '')}</div>` : '<span class="muted">—</span>')}
-                                        <div class="hint">${hasCats ? 'فیلد اجباری — بخشی از عنوان دسته را تایپ کنید و از لیست بازشو انتخاب کنید؛ گزینه پیش‌فرض «⏳ ثبت جهت بازبینی…» است (اگر دسته مناسب پیدا نکردید همین را بگذارید تا سرویس به بازبینان ارجاع شود).' : 'هنوز دسته‌بندی‌ای تعریف نشده — مدیر کل می‌تواند از بخش «دسته‌بندی پروژه‌ها» دسته و تگ تعریف کند.'}</div>
+                                        <div class="hint">${hasCats ? 'بخشی از عنوان دسته را تایپ کنید و از لیست بازشو انتخاب کنید؛ گزینه پیش‌فرض «⏳ ثبت جهت بازبینی…» است — اگر دسته مناسب پیدا نکردید همین را بگذارید یا دسته را خالی بگذارید (۲.۲.۱)؛ در هر دو حال سرویس پس از ذخیره به صف «بازبینی» ارجاع می‌شود.' : 'هنوز دسته‌بندی‌ای تعریف نشده — مدیر کل می‌تواند از بخش «دسته‌بندی پروژه‌ها» دسته و تگ تعریف کند.'}</div>
                                 </div>
                                 <div class="field">
                                         <label>تگ‌ها (چندتایی — اختیاری)</label>
@@ -1163,13 +1163,9 @@ TPP.views = TPP.views || {};
                         } catch (e) { tagIds = curTagIds(row); }
                 }
                 if (catSel && hasCatsNow() && catId <= 0) {
-                        toast('فیلد الزامی «دسته‌بندی پروژه» خالی است — از فهرست انتخاب کنید.', 'error', 7000);
-                        const comboInput = document.getElementById('svc-category-input');
-                        const focusEl = comboInput || catSel;
-                        focusEl.classList.add('invalid');
-                        focusEl.focus();
-                        focusEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        return;
+                        /* ۲.۲.۱ — دسته انتخاب نشده: به‌جای توقف ذخیره، سرویس پس از ثبت به صف «بازبینی» ارجاع می‌شود (سمت سرور)
+                         * دقیقاً رفتار موردنیاز سرویس‌های ایمپورت‌شده: ویرایش بدون انتخاب دسته → نمایش در صف بازبینی */
+                        toast('ℹ️ دسته‌بندی انتخاب نشد — سرویس پس از ذخیره به صف «بازبینی» ارجاع می‌شود.', 'warn', 6000);
                 }
 
                 // اعتبارسنجی قبل از ذخیره — در صورت خطا کاربر در همین صفحه می‌ماند و مقادیر حفظ می‌شود
@@ -1188,7 +1184,7 @@ TPP.views = TPP.views || {};
                                         address_id: addressId || null,
                                         address: addressId ? null : addressData,
                                         service: serviceData,
-                                        category: catId || null, // ۱.۱۹.۰ — دسته‌بندی
+                                        category: catId || 0, // ۱.۱۹.۰ — دسته‌بندی (۲.۲.۱: ۰ = «انتخاب نشده» → سمت سرور به صف بازبینی ارجاع می‌شود)
                                         tags: tagIds // ۱.۱۹.۰ — تگ‌ها
                                 });
                                 // بدون ریدایرکت به فهرست — کاربر در همان صفحه فرم می‌ماند
@@ -1209,7 +1205,7 @@ TPP.views = TPP.views || {};
                                         address_id: addressId || null,
                                         service: serviceData,
                                         address: addressData,
-                                        category: catId || null, // ۱.۱۹.۰ — دسته‌بندی
+                                        category: catId || 0, // ۱.۱۹.۰ — دسته‌بندی (۲.۲.۱: ۰ = «انتخاب نشده» → به بازبینی ارجاع می‌شود)
                                         tags: tagIds // ۱.۱۹.۰ — تگ‌ها
                                 };
                                 if (isTmp) {
@@ -1220,7 +1216,7 @@ TPP.views = TPP.views || {};
                                                 payload.id = null;
                                                 prev.payload.service = { ...prev.payload.service, ...serviceData };
                                                 prev.payload.address = { ...(prev.payload.address || {}), ...addressData };
-                                                prev.payload.category = catId || null; // ۱.۱۹.۰
+                                                prev.payload.category = catId || 0; // ۱.۱۹.۰ + ۲.۲.۱
                                                 prev.payload.tags = tagIds; // ۱.۱۹.۰
                                                 await TPP_IDB.set('outbox', prev.op_id, prev);
                                                 // اعمال محلی

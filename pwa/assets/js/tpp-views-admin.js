@@ -365,17 +365,20 @@ TPP.views = TPP.views || {};
                                 </ul>
                         </div>`;
                 }
-                /* ۲.۱.۱ — گزارش شفاف دسته‌بندی/تگ: اعمال‌شدن + تعریف‌های تازه‌ساخته‌شده */
+                /* ۲.۱.۱ — گزارش شفاف دسته‌بندی/تگ: اعمال‌شدن + تعریف‌های تازه‌ساخته‌شده
+                 * ۲.۲.۱ — سرویس‌های جدیدِ بدون دسته: به صف بازبینی ارجاع نمی‌شوند (با اولین ویرایشِ بدون دسته می‌روند) */
                 const taxLabels = Array.isArray(report.tax_created_labels) ? report.tax_created_labels : [];
                 const taxRows = report.tax_rows || 0;
+                const noCat = report.no_category || 0;
                 const newCats = taxLabels.filter((t) => t && 'category' === t.kind && t.label).map((t) => esc(String(t.label)));
                 const newTags = taxLabels.filter((t) => t && 'tag' === t.kind && t.label).map((t) => esc(String(t.label)));
                 let taxBanner = '';
-                if (taxRows || newCats.length || newTags.length) {
+                if (taxRows || newCats.length || newTags.length || noCat) {
                         const parts = [];
                         if (taxRows) parts.push(`دسته/تگ روی <b>${taxRows}</b> سرویس اعمال شد`);
                         if (newCats.length) parts.push(`دسته‌بندی جدید ساخته‌شده: <b>${newCats.join('، ')}</b>`);
                         if (newTags.length) parts.push(`تگ جدید ساخته‌شده: <b>${newTags.join('، ')}</b>`);
+                        if (noCat) parts.push(`<b>${String(noCat).replace(/[0-9]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[+d])}</b> سرویس جدید بدون دسته‌بندی ثبت شد — به صف بازبینی ارجاع نمی‌شود؛ با اولین ویرایشِ بدون انتخاب دسته، به بازبینی می‌رود`);
                         taxBanner = `<div class="alert info" style="margin-bottom:14px">🏷 ${parts.join(' — ')}</div>`;
                 }
                 ws.innerHTML = `
