@@ -231,6 +231,30 @@ class TPP_Services {
         }
 
         /**
+         * ۲.۳.۱ — رونوشت کامل داده‌های یک رکورد آدرس: هر ستونی غیر از ستون‌های ساختاری
+         * (id، created_by، created_at، updated_at، version) کپی می‌شود — همان معیار «ستون داده»
+         * در orphan_columns افزونه. ستون‌های فیلدها همیشه با پیشوند f_ شروع نمی‌شوند (نام‌کد دلخواه
+         * در پنل)؛ فیلترِ پیشوند f_ در نسخه ۲.۳.۰ باعث می‌شد فیلدهای سفارشی مثل «آدرس کامل» در
+         * رونوشت آدرس مستقل از قلم بیفتند — اینجا همهٔ داده‌ها بدون استثنا منتقل می‌شوند.
+         * خروجی: { copy: [col => val], changes: [col => {old, new}] } (مقدارهای خالی در changes نمی‌آیند)
+         */
+        private function address_data_copy( $address ) {
+                $structural = array( 'id', 'created_by', 'created_at', 'updated_at', 'version' );
+                $copy       = array();
+                $changes    = array();
+                foreach ( (array) $address as $col => $val ) {
+                        if ( in_array( (string) $col, $structural, true ) ) {
+                                continue;
+                        }
+                        $copy[ (string) $col ] = $val;
+                        if ( '' !== (string) $val ) {
+                                $changes[ (string) $col ] = array( 'old' => null, 'new' => $val );
+                        }
+                }
+                return array( 'copy' => $copy, 'changes' => $changes );
+        }
+
+        /**
          * ۲.۳.۰ — ثبت یک سرویس به‌عنوان آدرس مستقل: اگر آدرس فعلی بین چند سرویس مشترک باشد،
          * یک رونوشت اختصاصی از همان آدرس ساخته می‌شود و فقط همین سرویس به آن متصل می‌شود؛
          * آدرس سایر سرویس‌ها دست‌نخورده می‌ماند و هیچ رکوردی حذف نمی‌شود.
@@ -261,22 +285,16 @@ class TPP_Services {
                         return new WP_Error( 'tpp_address_not_found', 'آدرس یافت نشد.' );
                 }
 
-                // رونوشت اختصاصی آدرس — همه ستون‌های f_* (حتی ستون‌های بدون فیلد فعال) کپی می‌شوند
-                $copy         = array(
+                // رونوشت اختصاصی آدرس — ۲.۳.۱: همهٔ ستون‌های داده (فیلدهای فعال، سفارشیِ بدون پیشوند
+                // f_ و ستون‌های بازنشسته) کامل کپی می‌شوند — هیچ اطلاعاتی از دست نمی‌رود
+                $data         = $this->address_data_copy( $address );
+                $copy         = array_merge( array(
                         'created_by' => $user_id,
                         'created_at' => TPP_Date::now(),
                         'updated_at' => TPP_Date::now(),
                         'version'    => 1,
-                );
-                $addr_changes = array();
-                foreach ( (array) $address as $col => $val ) {
-                        if ( 'f_' === substr( (string) $col, 0, 3 ) ) {
-                                $copy[ $col ] = $val;
-                                if ( '' !== (string) $val ) {
-                                        $addr_changes[ $col ] = array( 'old' => null, 'new' => $val );
-                                }
-                        }
-                }
+                ), $data['copy'] );
+                $addr_changes = $data['changes'];
                 $new_address_id = TPP_DB::insert( 'addresses', $copy );
                 if ( ! $new_address_id ) {
                         return new WP_Error( 'tpp_address_failed', 'ساخت آدرس مستقل ناموفق بود.' );
@@ -371,21 +389,15 @@ class TPP_Services {
                                 if ( 0 === $idx ) {
                                         continue; // قدیمی‌ترین سرویس: آدرس اصلی را نگه می‌دارد
                                 }
-                                $copy         = array(
+                                // ۲.۳.۱ — کپی کامل همهٔ ستون‌های داده (نه فقط پیشوند f_) — هیچ اطلاعاتی از دست نمی‌رود
+                                $data         = $this->address_data_copy( $address );
+                                $copy         = array_merge( array(
                                         'created_by' => $user_id,
                                         'created_at' => $now,
                                         'updated_at' => $now,
                                         'version'    => 1,
-                                );
-                                $addr_changes = array();
-                                foreach ( (array) $address as $col => $val ) {
-                                        if ( 'f_' === substr( (string) $col, 0, 3 ) ) {
-                                                $copy[ $col ] = $val;
-                                                if ( '' !== (string) $val ) {
-                                                        $addr_changes[ $col ] = array( 'old' => null, 'new' => $val );
-                                                }
-                                        }
-                                }
+                                ), $data['copy'] );
+                                $addr_changes = $data['changes'];
                                 $new_address_id = TPP_DB::insert( 'addresses', $copy );
                                 if ( ! $new_address_id ) {
                                         continue;
