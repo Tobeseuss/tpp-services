@@ -206,6 +206,220 @@ class TPP_Services {
         }
 
         /* ---------------------------------------------------------------------
+         * ۲.۳.۰ — آدرس مستقل: جدا کردن سرویس از آدرس مشترک (رونوشت اختصاصی آدرس)
+         * ------------------------------------------------------------------- */
+
+        /** ۲.۳.۰ — آمار آدرس‌های مشترک (هر آدرس با بیش از یک سرویس متصل) */
+        public function shared_addresses_stats() {
+                $rows = TPP_DB::get_results(
+                        "SELECT address_id, COUNT(*) AS c FROM " . TPP_DB::table( 'services' ) . " WHERE address_id > 0 GROUP BY address_id HAVING c > 1"
+                );
+                $shared   = 0;
+                $involved = 0;
+                $max      = 0;
+                foreach ( (array) $rows as $r ) {
+                        $shared++;
+                        $involved += (int) $r['c'];
+                        $max = max( $max, (int) $r['c'] );
+                }
+                return array(
+                        'shared_addresses'  => $shared,
+                        'services_involved' => $involved,
+                        'max_group'         => $max,
+                        'checked_at_jalali' => TPP_Date::jalali_now( true ),
+                );
+        }
+
+        /**
+         * ۲.۳.۰ — ثبت یک سرویس به‌عنوان آدرس مستقل: اگر آدرس فعلی بین چند سرویس مشترک باشد،
+         * یک رونوشت اختصاصی از همان آدرس ساخته می‌شود و فقط همین سرویس به آن متصل می‌شود؛
+         * آدرس سایر سرویس‌ها دست‌نخورده می‌ماند و هیچ رکوردی حذف نمی‌شود.
+         * تاریخچه: رویداد «ایجاد آدرس» برای رونوشت + رویداد ویرایش سرویس با کلید _address_independent.
+         */
+        public function detach_independent_address( $id, $args = array() ) {
+                $user_id = (int) ( $args['user_id'] ?? get_current_user_id() );
+                $source  = sanitize_key( (string) ( $args['source'] ?? 'online' ) );
+
+                $service = $this->get( $id );
+                if ( ! $service ) {
+                        return new WP_Error( 'tpp_not_found', 'سرویس یافت نشد.' );
+                }
+                $address_id = (int) $service['address_id'];
+                if ( $address_id <= 0 ) {
+                        return new WP_Error( 'tpp_no_address', 'این سرویس به هیچ آدرسی متصل نیست.' );
+                }
+                $siblings = $this->address_services( $address_id );
+                if ( count( $siblings ) <= 1 ) {
+                        return array( // آدرس همین حالا مستقل است — چیزی برای جدا کردن نیست
+                                'status'     => 'independent',
+                                'service_id' => (int) $id,
+                                'address_id' => $address_id,
+                        );
+                }
+                $address = $this->get_address( $address_id );
+                if ( ! $address ) {
+                        return new WP_Error( 'tpp_address_not_found', 'آدرس یافت نشد.' );
+                }
+
+                // رونوشت اختصاصی آدرس — همه ستون‌های f_* (حتی ستون‌های بدون فیلد فعال) کپی می‌شوند
+                $copy         = array(
+                        'created_by' => $user_id,
+                        'created_at' => TPP_Date::now(),
+                        'updated_at' => TPP_Date::now(),
+                        'version'    => 1,
+                );
+                $addr_changes = array();
+                foreach ( (array) $address as $col => $val ) {
+                        if ( 'f_' === substr( (string) $col, 0, 3 ) ) {
+                                $copy[ $col ] = $val;
+                                if ( '' !== (string) $val ) {
+                                        $addr_changes[ $col ] = array( 'old' => null, 'new' => $val );
+                                }
+                        }
+                }
+                $new_address_id = TPP_DB::insert( 'addresses', $copy );
+                if ( ! $new_address_id ) {
+                        return new WP_Error( 'tpp_address_failed', 'ساخت آدرس مستقل ناموفق بود.' );
+                }
+                TPP_History::record( array(
+                        'entity' => 'address', 'entity_id' => (int) $new_address_id, 'address_id' => (int) $new_address_id,
+                        'revision' => 1, 'user_id' => $user_id, 'action' => 'create', 'source' => $source, 'changes' => $addr_changes,
+                ) );
+
+                // انتقال همین سرویس به رونوشت
+                $new_version = (int) $service['version'] + 1;
+                TPP_DB::update( 'services', array(
+                        'address_id' => (int) $new_address_id,
+                        'updated_at' => TPP_Date::now(),
+                        'version'    => $new_version,
+                ), array( 'id' => (int) $id ) );
+
+                $changes = array( '_address_independent' => array( 'old' => $address_id, 'new' => (int) $new_address_id ) );
+                TPP_History::record( array(
+                        'entity' => 'service', 'entity_id' => (int) $id, 'address_id' => (int) $new_address_id,
+                        'revision' => $new_version, 'user_id' => $user_id, 'action' => 'update',
+                        'source' => $source, 'changes' => $changes,
+                ) );
+
+                // ۱.۲۰.۰ — سجل بازبینی اقدامات ($service/$address = وضعیت قبل از تغییر)
+                TPP_Review::track_update( $service, $address, (int) $id, $user_id, $source, $changes );
+
+                do_action( 'tpp_service_detached_independent', (int) $id, $address_id, (int) $new_address_id );
+
+                return array(
+                        'status'             => 'detached',
+                        'service_id'         => (int) $id,
+                        'old_address_id'     => $address_id,
+                        'new_address_id'     => (int) $new_address_id,
+                        'new_version'        => $new_version,
+                        'siblings_left'      => count( $siblings ) - 1,
+                        'detached_at_jalali' => TPP_Date::jalali_now( true ),
+                );
+        }
+
+        /**
+         * ۲.۳.۰ — تبدیل دسته‌جمعی: هر آدرس که چند سرویس روی آن متصل است، به سرویس‌های مستقل تبدیل می‌شود —
+         * قدیمی‌ترین سرویس (کمترین id) آدرس اصلی را نگه می‌دارد (تاریخچه آدرس حفظ می‌شود) و برای هر
+         * سرویس دیگر یک رونوشت اختصاصی ساخته می‌شود؛ هیچ رکوردی حذف نمی‌شود.
+         * پشتیبان کامل پیش از اجرا توسط لایه REST گرفته می‌شود (زنجیره اطمینان مثل پاک‌سازی آدرس‌های یتیم).
+         */
+        public function detach_all_independent_addresses( $user_id ) {
+                $user_id = (int) $user_id;
+                $now     = TPP_Date::now();
+                $report  = array(
+                        'addresses_before'      => 0,
+                        'services_involved'     => 0,
+                        'services_detached'     => 0,
+                        'new_addresses_created' => 0,
+                        'ran_at'                => $now,
+                        'ran_at_jalali'         => TPP_Date::jalali_now( true ),
+                );
+
+                $rows = TPP_DB::get_results(
+                        "SELECT address_id, COUNT(*) AS c FROM " . TPP_DB::table( 'services' ) . " WHERE address_id > 0 GROUP BY address_id HAVING c > 1 ORDER BY address_id ASC"
+                );
+                if ( ! $rows || ! count( (array) $rows ) ) {
+                        $report['status'] = 'nothing';
+                        return $report;
+                }
+                $report['addresses_before']  = count( (array) $rows );
+                $report['services_involved'] = 0;
+                $addr_ids = array();
+                foreach ( (array) $rows as $r ) {
+                        $addr_ids[]                  = (int) $r['address_id'];
+                        $report['services_involved'] += (int) $r['c'];
+                }
+
+                $in        = implode( ',', $addr_ids );
+                $addresses = array();
+                foreach ( (array) TPP_DB::get_results( "SELECT * FROM " . TPP_DB::table( 'addresses' ) . " WHERE id IN (" . $in . ")" ) as $a ) {
+                        $addresses[ (int) $a['id'] ] = $a;
+                }
+                $by_addr = array();
+                foreach ( (array) TPP_DB::get_results(
+                        "SELECT * FROM " . TPP_DB::table( 'services' ) . " WHERE address_id IN (" . $in . ") ORDER BY address_id ASC, id ASC"
+                ) as $svc ) {
+                        $by_addr[ (int) $svc['address_id'] ][] = $svc;
+                }
+
+                foreach ( $by_addr as $addr_id => $svc_list ) {
+                        $address = $addresses[ $addr_id ] ?? null;
+                        if ( ! $address || count( $svc_list ) <= 1 ) {
+                                continue; // دفاعی — بین شمارش و اجرا تغییری نباید رخ داده باشد
+                        }
+                        foreach ( $svc_list as $idx => $service ) {
+                                if ( 0 === $idx ) {
+                                        continue; // قدیمی‌ترین سرویس: آدرس اصلی را نگه می‌دارد
+                                }
+                                $copy         = array(
+                                        'created_by' => $user_id,
+                                        'created_at' => $now,
+                                        'updated_at' => $now,
+                                        'version'    => 1,
+                                );
+                                $addr_changes = array();
+                                foreach ( (array) $address as $col => $val ) {
+                                        if ( 'f_' === substr( (string) $col, 0, 3 ) ) {
+                                                $copy[ $col ] = $val;
+                                                if ( '' !== (string) $val ) {
+                                                        $addr_changes[ $col ] = array( 'old' => null, 'new' => $val );
+                                                }
+                                        }
+                                }
+                                $new_address_id = TPP_DB::insert( 'addresses', $copy );
+                                if ( ! $new_address_id ) {
+                                        continue;
+                                }
+                                TPP_History::record( array(
+                                        'entity' => 'address', 'entity_id' => (int) $new_address_id, 'address_id' => (int) $new_address_id,
+                                        'revision' => 1, 'user_id' => $user_id, 'action' => 'create', 'source' => 'bulk', 'changes' => $addr_changes,
+                                ) );
+
+                                $new_version = (int) $service['version'] + 1;
+                                TPP_DB::update( 'services', array(
+                                        'address_id' => (int) $new_address_id,
+                                        'updated_at' => $now,
+                                        'version'    => $new_version,
+                                ), array( 'id' => (int) $service['id'] ) );
+
+                                $changes = array( '_address_independent' => array( 'old' => (int) $addr_id, 'new' => (int) $new_address_id ) );
+                                TPP_History::record( array(
+                                        'entity' => 'service', 'entity_id' => (int) $service['id'], 'address_id' => (int) $new_address_id,
+                                        'revision' => $new_version, 'user_id' => $user_id, 'action' => 'update',
+                                        'source' => 'bulk', 'changes' => $changes,
+                                ) );
+
+                                TPP_Review::track_update( $service, $address, (int) $service['id'], $user_id, 'bulk', $changes );
+
+                                $report['services_detached']++;
+                                $report['new_addresses_created']++;
+                        }
+                }
+
+                return $report;
+        }
+
+        /* ---------------------------------------------------------------------
          * سرویس‌ها — CRUD
          * ------------------------------------------------------------------- */
 

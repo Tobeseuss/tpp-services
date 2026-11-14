@@ -9,7 +9,7 @@ window.TPP = window.TPP || {};
 
 /** نسخه این کد — با نسخه‌ای که سرور در bootstrap می‌فرستد مقایسه می‌شود؛
  *  اگر فرق کنند یعنی پوسته قدیمی در مرورگر مانده و باید تازه شود. */
-TPP.VERSION = '2.2.1';
+TPP.VERSION = '2.3.0';
 
 // ۲.۰.۱ — ماژول TPP.progressUtil و کاتالوگ «پیشرفت دایری» کامل حذف شدند.
 
@@ -350,7 +350,7 @@ TPP.app = (function () {
         }
 
         /* برچسب فیلدهای مجازی ثبت‌شده در تاریخچه (ادغام/انتقال آدرس) */
-        const PSEUDO_FIELD_LABELS = { _merged_from: 'ادغام از سرویس', _address_moved: 'انتقال به آدرس', _progress_steps: 'پیشرفت دایری سرویس', _progress_failure: 'خرابی اعلام‌شده' };
+        const PSEUDO_FIELD_LABELS = { _merged_from: 'ادغام از سرویس', _address_moved: 'انتقال به آدرس', _address_independent: 'ثبت به عنوان آدرس مستقل', _progress_steps: 'پیشرفت دایری سرویس', _progress_failure: 'خرابی اعلام‌شده' };
 
         function fieldLabel(slug) {
                 if (PSEUDO_FIELD_LABELS[slug]) return PSEUDO_FIELD_LABELS[slug];

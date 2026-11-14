@@ -626,7 +626,7 @@ TPP.views = TPP.views || {};
                                 list.innerHTML = '<p class="muted" style="margin-top:10px">هنوز هیچ پشتیبانی ذخیره نشده است — با اولین ایمپورت گروهی (یا دکمه «گرفتن پشتیبان تازه») ساخته می‌شود.</p>';
                                 return;
                         }
-                        const ctxLabel = { import: 'خودکار (قبل از ایمپورت)', manual: 'دستی', numfix: 'خودکار (قبل از اصلاح اعداد)', pre_db_update: 'خودکار (قبل از بروزآوری دیتابیس)', pre_orphan_addr: 'خودکار (قبل از پاک‌سازی آدرس‌های بدون سرویس)' }; // 1.18.0 + 1.21.0 + 1.29.0
+                        const ctxLabel = { import: 'خودکار (قبل از ایمپورت)', manual: 'دستی', numfix: 'خودکار (قبل از اصلاح اعداد)', pre_db_update: 'خودکار (قبل از بروزآوری دیتابیس)', pre_orphan_addr: 'خودکار (قبل از پاک‌سازی آدرس‌های بدون سرویس)', pre_indep_addr: 'خودکار (قبل از تبدیل هم‌آدرس‌ها به مستقل)' }; // 1.18.0 + 1.21.0 + 1.29.0 + 2.3.0
                         list.innerHTML = '<div class="table-wrap" style="margin-top:10px"><table class="tpp-table"><thead><tr>' +
                                 '<th>فایل</th><th>تاریخ</th><th>نوع</th><th>کاربر</th><th>حجم</th><th>محتوا</th><th>عملیات</th>' +
                                 '</tr></thead><tbody>' +
@@ -1791,6 +1791,16 @@ TPP.views = TPP.views || {};
                 </div>
 
                 <div class="card">
+                        <h3>🔓 تبدیل سرویس‌های هم‌آدرس به مستقل (۲.۳.۰)</h3>
+                        <p class="muted">هر جا در کل دیتابیس چند سرویس به یک آدرس متصل باشد، همه آن سرویس‌ها به سرویس مستقل تبدیل می‌شوند: قدیمی‌ترین سرویسِ هر آدرس، آدرس اصلی را نگه می‌دارد (تاریخچه آدرس حفظ می‌شود) و برای هر سرویس دیگر یک رونوشت اختصاصی از همان آدرس ساخته می‌شود. <b>هیچ رکوردی حذف نمی‌شود</b> و همه تغییرات در تاریخچه و سجل بازبینی ثبت می‌شود. پیش از اجرا یک پشتیبان کامل خودکار روی سرور گرفته می‌شود و بعد از پایان، همین‌جا با یک کلیک قابل بازگردانی است.</p>
+                        <div class="actions-row" style="display:flex;gap:8px;flex-wrap:wrap">
+                                <button class="btn" id="sa-count">🔍 شمارش آدرس‌های مشترک</button>
+                                <button class="btn btn-primary" id="sa-run">🔓 تبدیل همه به مستقل</button>
+                        </div>
+                        <div id="sa-result" style="margin-top:10px"></div>
+                </div>
+
+                <div class="card">
                         <h3>🌐 وضعیت اتصال و SSL (۱.۳۲.۰)</h3>
                         <p class="muted">اگر گواهی SSL سایت مشکل پیدا کند اما نسخه http در دسترس باشد، افزونه خودکار خودش را وفق می‌دهد: پیوندهای داخلی با اسکیمای جاری تولید می‌شوند و اپ مسیر جایگزین (http/https + پیوند یکتای خاموش + پشتیبان admin-ajax) را خودکار پیدا می‌کند و به‌خاطر می‌سپارد — آنلاین، آفلاین و APIها با هر دو حالت کار می‌کنند. با دکمه زیر وضعیت واقعی هر دو مسیر را همین حالا ببینید.</p>
                         <div id="ssl-status"></div>
@@ -1962,6 +1972,54 @@ TPP.views = TPP.views || {};
                                         } catch (e) { oaBox().innerHTML += '<div class="alert err">خطا در بازگردانی: ' + esc(e.message) + '</div>'; rb.disabled = false; }
                                 });
                         } catch (e) { oaBox().innerHTML = '<div class="alert err">خطا: ' + esc(e.message) + '</div>'; }
+                        btn.disabled = false;
+                });
+
+                /* ---------- ۲.۳.۰ — تبدیل سرویس‌های هم‌آدرس به مستقل ---------- */
+                const saBox = () => document.getElementById('sa-result');
+                document.getElementById('sa-count').addEventListener('click', async () => {
+                        const btn = document.getElementById('sa-count');
+                        btn.disabled = true;
+                        saBox().innerHTML = '<div class="loading-block"><div class="spinner"></div></div>';
+                        try {
+                                const res = await TPP.api.request('GET', 'tools/shared-addresses');
+                                const n = (res && res.shared_addresses) || 0;
+                                saBox().innerHTML = '<div class="alert ' + (n ? 'warn' : 'success') + '">' +
+                                        (n ? '🔍 ' + n.toLocaleString('fa-IR') + ' آدرس مشترک پیدا شد که ' + (((res && res.services_involved) || 0)).toLocaleString('fa-IR') + ' سرویس روی آن‌ها متصل است' + (res && res.checked_at_jalali ? ' — ' + esc(res.checked_at_jalali) : '') + ' — با دکمه «تبدیل همه به مستقل» هر سرویس آدرس اختصاصی می‌گیرد.' : 'هیچ آدرس مشترکی وجود ندارد — همه سرویس‌ها آدرس مستقل دارند. ✅') + '</div>';
+                        } catch (e) { saBox().innerHTML = '<div class="alert err">خطا: ' + esc(e.message) + '</div>'; }
+                        btn.disabled = false;
+                });
+                document.getElementById('sa-run').addEventListener('click', async () => {
+                        const ok = await confirmBox(
+                                'در کل دیتابیس، همه سرویس‌های متصل به هر آدرس مشترک به سرویس مستقل تبدیل شوند؟<br>' +
+                                '<span class="muted">قدیمی‌ترین سرویس هر آدرس، آدرس اصلی را نگه می‌دارد و بقیه رونوشت اختصاصی می‌گیرند؛ هیچ رکوردی حذف نمی‌شود. پیش از اجرا، <b>یک پشتیبان کامل خودکار</b> گرفته و روی سرور ذخیره می‌شود و بعد از پایان، همین‌جا با یک کلیک قابل بازگردانی است.</span>',
+                                'تبدیل سرویس‌های هم‌آدرس به مستقل');
+                        if (!ok) return;
+                        const btn = document.getElementById('sa-run');
+                        btn.disabled = true;
+                        saBox().innerHTML = '<div class="loading-block"><div class="spinner"></div></div>';
+                        try {
+                                const res = await TPP.api.request('POST', 'tools/shared-addresses/detach');
+                                const bk = res && res.backup ? res.backup : null;
+                                let html = '<div class="alert success">✅ تبدیل انجام شد — ' + ((res && res.services_detached) || 0).toLocaleString('fa-IR') + ' سرویس از ' + ((res && res.addresses_before) || 0).toLocaleString('fa-IR') + ' آدرس مشترک مستقل شد و ' + ((res && res.new_addresses_created) || 0).toLocaleString('fa-IR') + ' رونوشت آدرس ساخته شد' + (res && res.ran_at_jalali ? ' — ' + esc(res.ran_at_jalali) : '') + '</div>';
+                                if (bk && bk.filename) {
+                                        html += '<div class="alert warn">🛡 پشتیبان کامل پیش از اجرا گرفته شد: <code dir="ltr">' + esc(bk.filename) + '</code>' +
+                                                (bk.created_at_jalali ? ' — ' + esc(bk.created_at_jalali) : '') +
+                                                ' <button class="btn btn-sm" id="sa-restore">♻️ بازگردانی همین پشتیبان</button></div>';
+                                }
+                                saBox().innerHTML = html;
+                                const rb = document.getElementById('sa-restore');
+                                if (rb) rb.addEventListener('click', async () => {
+                                        const ok2 = await confirmBox('همه داده‌ها به وضعیتِ قبل از تبدیل بازگردانی شود؟<br><span class="muted">پشتیبان: <code dir="ltr">' + esc(bk.filename) + '</code></span>', 'بازگردانی');
+                                        if (!ok2) return;
+                                        rb.disabled = true;
+                                        try {
+                                                const rres = await TPP.api.request('POST', 'backup/stored/restore', { filename: bk.filename });
+                                                renderRestoreSummary(rres, 'sa-result');
+                                                toast('بازگردانی کامل شد.', 'success');
+                                        } catch (e) { saBox().innerHTML += '<div class="alert err">خطا در بازگردانی: ' + esc(e.message) + '</div>'; rb.disabled = false; }
+                                });
+                        } catch (e) { saBox().innerHTML = '<div class="alert err">خطا: ' + esc(e.message) + '</div>'; }
                         btn.disabled = false;
                 });
 

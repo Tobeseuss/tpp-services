@@ -500,7 +500,7 @@ TPP.views = TPP.views || {};
                         catch (e) { console.error('copyOmc', e); toast('خطا در کپی مشخصات: ' + esc(e.message), 'error', 7000); }
                 });
 
-                bindSiblings();
+                bindSiblings(row);
         };
 
         /* ==================== پیامک + کپی مشخصات ==================== */
@@ -1276,11 +1276,13 @@ TPP.views = TPP.views || {};
                         </table></div>
                         <div class="actions-row">
                                 ${can('tpp_create_services') ? `<button class="btn" id="add-sibling">➕ افزودن سرویس دیگر برای این آدرس</button>` : ''}
+                                ${can('tpp_edit_services') ? `<button class="btn btn-primary" id="detach-addr-btn">🔓 ثبت به عنوان آدرس مستقل</button>` : ''}
                         </div>
+                        ${can('tpp_edit_services') ? '<p class="muted" style="margin-top:6px">🔓 «ثبت به عنوان آدرس مستقل» برای این سرویس یک رونوشت اختصاصی از همین آدرس می‌سازد؛ از این به بعد آدرسش با هیچ سرویس دیگری مشترک نیست و آدرس سایر سرویس‌ها هم تغییری نمی‌کند. (۲.۳.۰)</p>' : ''}
                 </div>`;
         }
 
-        function bindSiblings() {
+        function bindSiblings(row) {
                 document.querySelectorAll('tr[data-sib]').forEach((tr) => {
                         tr.addEventListener('click', () => go('service/' + tr.getAttribute('data-sib')));
                 });
@@ -1289,6 +1291,28 @@ TPP.views = TPP.views || {};
                         const hiddenEl = document.getElementById('selected-address-id');
                         const addrId2 = hiddenEl ? hiddenEl.value : '';
                         go('service/new' + (addrId2 ? '?address=' + addrId2 : ''));
+                });
+                // ۲.۳.۰ — ثبت به عنوان آدرس مستقل: جدا کردن این سرویس از آدرس مشترک با رونوشت اختصاصی
+                const det = document.getElementById('detach-addr-btn');
+                if (det && row && row.id) det.addEventListener('click', async () => {
+                        const ok = await confirmBox(
+                                'برای این سرویس یک رونوشت اختصاصی از آدرس فعلی ساخته شود؟<br>' +
+                                '<span class="muted">از این به بعد این سرویس آدرس مستقل دارد و با سرویس‌های دیگر این آدرس مشترک نیست؛ آدرس سایر سرویس‌ها تغییری نمی‌کند و هیچ رکوردی حذف نمی‌شود. این عمل در تاریخچه و سجل بازبینی ثبت می‌شود.</span>',
+                                'ثبت به عنوان آدرس مستقل');
+                        if (!ok) return;
+                        det.disabled = true;
+                        try {
+                                const res = await TPP.api.request('POST', 'services/' + row.id + '/detach-address');
+                                if (res && res.status === 'independent') {
+                                        toast('این سرویس همین حالا آدرس مستقل دارد — چیزی برای جدا کردن نیست.', 'info', 6000);
+                                } else {
+                                        toast('✅ سرویس به آدرس مستقل تبدیل شد — شناسه آدرس جدید: ' + ((res && res.new_address_id) || '؟').toLocaleString('fa-IR'), 'success', 8000);
+                                }
+                                TPP.app.refreshRoute(); // کارت هم‌آدرس‌ها بعد از نوسازی دیگر نمایش داده نمی‌شود
+                        } catch (e) {
+                                toast('خطا در ثبت آدرس مستقل: ' + esc(e.message), 'error', 8000);
+                                det.disabled = false;
+                        }
                 });
         }
 

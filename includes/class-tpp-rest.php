@@ -164,6 +164,8 @@ class TPP_Rest {
                                 'PUT'    => array( 'perm' => 'perm_edit', 'cb' => 'update_service' ),
                                 'DELETE' => array( 'perm' => 'perm_delete', 'cb' => 'delete_service' ),
                         ),
+                        /* ۲.۳.۰ — ثبت به عنوان آدرس مستقل: جدا کردن سرویس از آدرس مشترک با رونوشت اختصاصی */
+                        'services/(?P<id>\d+)/detach-address' => array( 'POST' => array( 'perm' => 'perm_edit', 'cb' => 'detach_service_address' ) ),
                         'addresses/(?P<id>\d+)'    => array( 'GET' => array( 'perm' => 'perm_cap_view', 'cb' => 'get_address' ) ),
                         'addresses/suggest'        => array( 'GET' => array( 'perm' => 'perm_cap_view', 'cb' => 'suggest_addresses' ) ),
 
@@ -267,6 +269,10 @@ class TPP_Rest {
                         /* --- ۱.۲۹.۰ — پاک‌سازی آدرس‌های بدون سرویس (یتیم) --- */
                         'tools/orphan-addresses'         => array( 'GET'  => array( 'perm' => 'perm_settings', 'cb' => 'tools_orphan_addresses_count' ) ),
                         'tools/orphan-addresses/cleanup' => array( 'POST' => array( 'perm' => 'perm_settings', 'cb' => 'tools_orphan_addresses_cleanup' ) ),
+
+                        /* --- ۲.۳.۰ — تبدیل سرویس‌های هم‌آدرس به مستقل --- */
+                        'tools/shared-addresses'         => array( 'GET'  => array( 'perm' => 'perm_settings', 'cb' => 'tools_shared_addresses_count' ) ),
+                        'tools/shared-addresses/detach'  => array( 'POST' => array( 'perm' => 'perm_settings', 'cb' => 'tools_shared_addresses_detach' ) ),
 
                         /* --- ۱.۱۹.۰ — دسته‌بندی پروژه‌ها و تگ‌های سیستمی --- */
                         'categories'               => array(
@@ -1331,6 +1337,19 @@ class TPP_Rest {
                 return self::ok( $result );
         }
 
+        /** ۲.۳.۰ — ثبت به عنوان آدرس مستقل: جدا کردن سرویس از آدرس مشترک با رونوشت اختصاصی آدرس */
+        public function detach_service_address( WP_REST_Request $request ) {
+                $id     = (int) $request['id'];
+                $result = tpp()->services()->detach_independent_address( $id, array(
+                        'user_id' => get_current_user_id(),
+                        'source'  => 'online',
+                ) );
+                if ( is_wp_error( $result ) ) {
+                        return self::err( $result->get_error_code(), $result->get_error_message(), 400 );
+                }
+                return self::ok( $result );
+        }
+
         public function get_address( WP_REST_Request $request ) {
                 $id      = (int) $request['id'];
                 $address = tpp()->services()->get_address( $id );
@@ -2057,6 +2076,30 @@ class TPP_Rest {
                 return self::ok( $result );
         }
 
+        /** ۲.۳.۰ — شمارش آدرس‌های مشترک (بیش از یک سرویس متصل) */
+        public function tools_shared_addresses_count() {
+                return self::ok( tpp()->services()->shared_addresses_stats() );
+        }
+
+        /** ۲.۳.۰ — تبدیل همه آدرس‌های مشترک به سرویس‌های مستقل (پشتیبان کامل خودکار پیش از اجرا — زنجیره اطمینان مثل پاک‌سازی آدرس‌های یتیم) */
+        public function tools_shared_addresses_detach() {
+                try {
+                        $backup = TPP_Backup::create( 'pre_indep_addr', get_current_user_id() );
+                } catch ( Throwable $e ) {
+                        return self::err( 'tpp_backup_error', 'پشتیبان‌گیری خودکار ناموفق بود: ' . $e->getMessage(), 500 );
+                }
+                if ( is_wp_error( $backup ) ) {
+                        return self::err( $backup->get_error_code(), 'پشتیبان‌گیری خودکار ناموفق بود: ' . $backup->get_error_message(), 500 );
+                }
+                try {
+                        $result = tpp()->services()->detach_all_independent_addresses( get_current_user_id() );
+                } catch ( Throwable $e ) {
+                        return self::err( 'tpp_indep_error', 'خطا در تبدیل سرویس‌های هم‌آدرس به مستقل: ' . $e->getMessage(), 500 );
+                }
+                $result['backup'] = $backup;
+                return self::ok( $result );
+        }
+
         /** ۱.۱۸.۰ — اصلاح اعداد فارسی/عربی به انگلیسی در همه فیلدها (با پشتیبان خودکار پیش از اجرا) */
         public function numbers_fix( WP_REST_Request $request ) {
                 $dry_run = ! empty( $request->get_param( 'dry_run' ) );
@@ -2510,6 +2553,7 @@ class TPP_Rest {
                                 $ep( 'GET', 'services/{id}', 'مشخصات سرویس', 'کلید فیلد + دسته‌بندی/تگ‌ها + تاریخچه + سرویس‌های همان آدرس + بازدیدهای اخیر؛ بازدید در گزارش فعالیت ثبت می‌شود.', 'مشاهده سرویس‌ها' ),
                                 $ep( 'PUT', 'services/{id}', 'ویرایش سرویس', 'ویرایش با base_version برای تشخیص تعارض همزمانی؛ op_id اختیاری — تغییرات در تاریخچه/گزارش فعالیت ثبت می‌شود. (۲.۰.۱ — کلید progress دیگر پذیرفته نمی‌شود.)', 'ویرایش سرویس', array(), array( 'service' => array( 'f_owner_name' => 'نام جدید' ), 'base_version' => 3 ) ),
                                 $ep( 'DELETE', 'services/{id}', 'حذف سرویس', 'حذف + تاریخچه آبشاری؛ op_id اختیاری.', 'حذف سرویس', array(), array( 'op_id' => 'uniq-2' ) ),
+                                $ep( 'POST', 'services/{id}/detach-address', 'ثبت به عنوان آدرس مستقل (۲.۳.۰)', 'اگر چند سرویس به یک آدرس متصل باشند، برای همین سرویس یک رونوشت اختصاصی از آدرس فعلی ساخته می‌شود و فقط همین سرویس به آن متصل می‌شود؛ آدرس سایر سرویس‌ها دست‌نخورده می‌ماند و هیچ رکوردی حذف نمی‌شود. رویداد ایجاد آدرس و تغییر سرویس (کلید _address_independent) در تاریخچه و سجل بازبینی ثبت می‌شود.', 'ویرایش سرویس' ),
                                 $ep( 'GET', 'addresses/{id}', 'آدرس و سرویس‌هایش', 'اطلاعات آدرس + همه سرویس‌های آن + تایم‌لاین.', 'مشاهده سرویس‌ها' ),
                                 $ep( 'GET', 'addresses/suggest', 'پیشنهاد آدرس', '?query= برای autocomplete آدرس در فرم ثبت.', 'مشاهده سرویس‌ها', array( $arg( 'query', 'string', 'حداقل ۲ نویسه' ) ) ),
                                 $ep( 'GET', 'values', 'مقادیر یکتای فیلد', 'مقادیر متمایز یک فیلد برای کشویی‌های فیلتر (با جستجوی q).', 'مشاهده سرویس‌ها', array( $arg( 'field', 'string', 'slug فیلد مثل f_center_name' ), $arg( 'q', 'string', 'فیلتر LIKE' ), $arg( 'limit', 'int', 'پیش‌فرض ۱۰۰' ) ) ),
@@ -2622,6 +2666,8 @@ class TPP_Rest {
                                 $ep( 'POST', 'tools/db-update', 'بروزآوری دیتابیس (۱.۲۱.۰ — ارتقایافته در ۲.۰.۱)', 'ستون‌های یتیم (بدون فیلد فعال) هر دو جدول services/addresses پیدا می‌شود، محتوایشان قالب‌بندی‌شده («🔹 عنوان: مقدار») به فیلد «توضیحات متفرقه» سرویس‌ها منتقل و ستون‌ها کامل حذف می‌شود. ۲.۰.۱: داده‌های «پیشرفت دایری» حذف‌شده هم پاک‌سازی می‌شوند — خلاصه خوانا به «توضیحات متفرقه» منتقل و ستون‌های progress_* با ایندکس‌هایشان حذف می‌شوند (گزارش در progress_cleanup پاسخ). پیش از اجرا پشتیبان کامل خودکار روی سرور گرفته می‌شود (پاسخ شامل متادیتای پشتیبان و ستون‌های باقی‌مانده).', 'تنظیمات (مدیر کل)' ),
                                 $ep( 'GET', 'tools/orphan-addresses', 'شمارش آدرس‌های بدون سرویس (۱.۲۹.۰)', 'تعداد آدرس‌هایی که هیچ سرویسی روی آن‌ها ثبت نیست (یتیم — معمولاً بقایای حذف سرویس‌ها در نسخه‌های قدیم) را برمی‌گرداند.', 'تنظیمات (مدیر کل)' ),
                                 $ep( 'POST', 'tools/orphan-addresses/cleanup', 'پاک‌سازی آدرس‌های بدون سرویس (۱.۲۹.۰)', 'آدرس‌های بدون سرویس به‌همراه رکوردهای تاریخچه یتیمشان حذف می‌شوند؛ پیش از اجرا پشتیبان کامل خودکار گرفته می‌شود (پاسخ شامل متادیتای پشتیبان برای بازگردانی یک‌کلیکی).', 'تنظیمات (مدیر کل)' ),
+                                $ep( 'GET', 'tools/shared-addresses', 'شمارش آدرس‌های مشترک (۲.۳.۰)', 'تعداد آدرس‌هایی که بیش از یک سرویس روی آن‌ها متصل است + مجموع سرویس‌های درگیر و بزرگ‌ترین گروه.', 'تنظیمات (مدیر کل)' ),
+                                $ep( 'POST', 'tools/shared-addresses/detach', 'تبدیل هم‌آدرس‌ها به سرویس مستقل (۲.۳.۰)', 'برای هر آدرسی که چند سرویس روی آن متصل است، قدیمی‌ترین سرویس آدرس اصلی را نگه می‌دارد (تاریخچه آدرس حفظ می‌شود) و برای هر سرویس دیگر رونوشت اختصاصی آدرس ساخته می‌شود — همه سرویس‌های درگیر آدرس مستقل می‌گیرند و هیچ رکوردی حذف نمی‌شود. پیش از اجرا پشتیبان کامل خودکار گرفته می‌شود (پاسخ شامل متادیتای پشتیبان برای بازگردانی یک‌کلیکی).', 'تنظیمات (مدیر کل)' ),
                         ) ),
 
                         array( 'title' => 'ایمپورت اکسل (۳ مرحله‌ای)', 'items' => array(

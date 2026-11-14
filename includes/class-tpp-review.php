@@ -148,6 +148,7 @@ class TPP_Review {
                         '_category'        => 'دسته‌بندی پروژه',
                         '_tags'            => 'تگ‌ها',
                         '_address_moved'   => 'انتقال به آدرس دیگر',
+                        '_address_independent' => 'ثبت به عنوان آدرس مستقل',
                         '_bulk_edit'       => 'نوع ویرایش',
                 );
                 if ( isset( $special[ $key ] ) ) {
